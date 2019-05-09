@@ -122,7 +122,7 @@ def readme_url(contents_url):
     # find name of README file and construct a link to the raw text of the readme
     for file in requests.get(contents_url, headers=HEADERS).json():
         if file["name"].lower().startswith("readme"):
-            return file["download_url"]
+            return file["html_url"]
 
 REPO_FILE_NAME = "repos.json"
 def load_repo_metadata(use_cache=True):
@@ -228,7 +228,9 @@ def repo_metadata(api_dict):
     lang = api_dict["language"]
     
     # find README text
-    readme_text = api_dict["readme"]
+    soup = BeautifulSoup(api_dict["readme"], "html.parser")
+    readme_text = soup.find("div", class_="Box mt-3 position-relative").text
+    readme_text = readme_text[readme_text.find("History") + 7:]
     
     return dict(repo_id=repo_id, user_name=user_name, repo_name=repo_name, lang=lang, readme=readme_text)
 
@@ -237,6 +239,8 @@ some_repo_data = all_repo_metadata(all_repo_data)
 
 some_repo_data[:3]
 
+
+# **Clean, stem, lemmatize, and remove stopwords**
 
 # + {"endofcell": "--"}
 # # +
@@ -272,9 +276,7 @@ def remove_chars(text):
 def basic_clean(text):
     return pipe(text, str.lower, normalize_text, remove_chars)
 
-
 # -
-
 
 def tokenize(text):
     tokenizer = ToktokTokenizer()
@@ -323,26 +325,51 @@ def prep_readme_data(all_repo_data):
     return [prep_readme(repo) for repo in all_repo_data]
 
 
-df_orig = pd.DataFrame(prep_readme_data(some_repo_data))
+df = pd.DataFrame(prep_readme_data(some_repo_data))
 # --
 
 # ### Summarize Data
 
-df_orig.head()
+df.head()
 
-df_orig.describe(include="all")
+df.describe(include="all")
 
-# ### Handle Missing Values
+# ### Fill NaNs with "None"
 
-# ### Handle Duplicates
+df.isna().sum()
 
-# ### Fix Data Types
+df = df.fillna("None")
 
-# ### Handle Outliers
+df.isna().sum()
 
 # ### Check Missing Values
 
 # ## Exploration  <a name="exploration"></a>
+
+langs = pd.concat([df.lang.value_counts(),
+                    df.lang.value_counts(normalize=True)], axis=1)
+langs.columns = ['n', 'percent']
+langs
+
+# ### Extract words from readmes for each language
+
+# +
+# ham_words = ' '.join(df[df.label == 'ham'].text)
+# spam_words = ' '.join(df[df.label == 'spam'].text)
+# all_words = ' '.join(df.text)
+
+top_five = langs[:5].index
+pprint(top_five)
+
+langs_words = {}
+for lang in top_five:
+    langs_words[lang] = " ".join(df[df.lang == lang].clean)
+    
+pprint(langs_words)
+# -
+
+lang_freqs = {lang: pd.Series(readme.split()).value_counts() for lang, readme in langs_words.items()}
+pprint(lang_freqs)
 
 # ### Train-Test Split
 
