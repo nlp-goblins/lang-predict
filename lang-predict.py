@@ -62,10 +62,20 @@
 # ### Data Dictionary & Domain Knowledge
 
 # ### Hypotheses
+<<<<<<< HEAD
 # 1. I expect to see JavaScript and Python as the two most common languages used based on current popularity
 # 2. Using symbols and characters unique to certain languages, we might be able to more accurately predict language used
+=======
+#
+# * The primary language may be mentioned in the README. But some repositories mention multiple languages, so this may interfere with this method.
+# * The number of words may be an indication of the language. Older repositories are probably written in certain languages and because of their age, may have more documentation.
+# * We may be able to classify some repositories based on the operators used in the README. We may want to create a mapping of operators to languages. Then we can limit the potential languages using this and look at which language has the highest probability
+# * The READMEs contain sample code to download the library or use the program. This may be an indicator of the language. We can create a list of potential commands and map them to language.
+>>>>>>> 8ec497ef033136d6ba519429bd134c3c81991251
 
 # ### Thoughts & Questions
+#
+# * The code in many repositories are written in multiple languages. 
 
 # ### Prepare the Environment
 
