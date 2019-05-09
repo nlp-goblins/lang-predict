@@ -62,6 +62,8 @@
 # ### Data Dictionary & Domain Knowledge
 
 # ### Hypotheses
+# 1. I expect to see JavaScript and Python as the two most common languages used based on current popularity
+# 2. Using symbols and characters unique to certain languages, we might be able to more accurately predict language used
 
 # ### Thoughts & Questions
 
