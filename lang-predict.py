@@ -85,12 +85,20 @@
 import os
 import json
 from pprint import pprint
+import re
+import unicodedata
+from functools import reduce, partial
+from copy import deepcopy
 
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 
 import env
+
+import nltk
+from nltk.tokenize.toktok import ToktokTokenizer
+from nltk.corpus import stopwords
 # -
 
 # **Reload modules to capture changes**
@@ -139,8 +147,10 @@ def load_repo_metadata(use_cache=True):
             json.dump(response, f)
         return response
 
-repo_data = load_repo_metadata()
+all_repo_data = load_repo_metadata()
 # -
+
+all_repo_data[:3]
 
 # ### Junk Code
 
@@ -205,7 +215,7 @@ repo_data = load_repo_metadata()
 
 # +
 def all_repo_metadata(api_data):
-    return (repo_metadata(repo) for repo in api_data)
+    return [repo_metadata(repo) for repo in api_data]
 
 
 def repo_metadata(api_dict):
@@ -222,12 +232,105 @@ def repo_metadata(api_dict):
     
     return dict(repo_id=repo_id, user_name=user_name, repo_name=repo_name, lang=lang, readme=readme_text)
 
-df_orig = pd.DataFrame(all_repo_metadata(repo_data))
+some_repo_data = all_repo_metadata(all_repo_data)
 # -
+
+some_repo_data[:3]
+
+
+# + {"endofcell": "--"}
+# # +
+# right to left
+def compose(*fns):
+    return partial(reduce, lambda x, f: f(x), reversed(fns))
+
+
+# applies in the order supplied
+def pipe(v, *fns):
+    return reduce(lambda x, f: f(x), fns, v)
+
+
+def map_exhaust(func, *iters):
+    for args in zip(*iters):
+        func(*args)
+
+
+# # +
+def normalize_text(text):
+    return (
+        unicodedata.normalize("NFKD", text)
+        .encode("ascii", "ignore")
+        .decode("utf-8", "ignore")
+    )
+
+
+def remove_chars(text):
+    return re.sub(r"[^A-Za-z0-9\s]", "", text)
+
+
+
+def basic_clean(text):
+    return pipe(text, str.lower, normalize_text, remove_chars)
+
+
+# -
+
+
+def tokenize(text):
+    tokenizer = ToktokTokenizer()
+    return tokenizer.tokenize(text, return_str=True)
+
+
+def stem(text):
+    ps = nltk.porter.PorterStemmer()
+    return " ".join([ps.stem(word) for word in text.split()])
+
+
+def lemmatize(text):
+    wnl = nltk.stem.WordNetLemmatizer()
+    lemmas = [wnl.lemmatize(word) for word in text.split()]
+    return " ".join(lemmas)
+
+
+def remove_stopwords(text, include=[], exclude=[]):
+    stopword_list = stopwords.words("english")
+
+    map_exhaust(stopword_list.remove, exclude)
+    map_exhaust(stopword_list.append, include)
+
+    removed = " ".join([w for w in text.split() if w not in stopword_list])
+
+    #     print("Removed", len(text.split()) - len(removed.split()), "words")
+    return removed
+
+
+def prep_readme(repo_data):
+    copy = deepcopy(repo_data)
+
+    copy["clean"] = pipe(
+        copy["readme"], basic_clean, tokenize, remove_stopwords
+    )
+
+    copy["stemmed"] = stem(copy["clean"])
+
+    copy["lemmatized"] = lemmatize(copy["clean"])
+
+    
+    return copy
+
+
+def prep_readme_data(all_repo_data):
+    return [prep_readme(repo) for repo in all_repo_data]
+
+
+df_orig = pd.DataFrame(prep_readme_data(some_repo_data))
+# --
+
+# ### Summarize Data
 
 df_orig.head()
 
-# ### Summarize Data
+df_orig.describe(include="all")
 
 # ### Handle Missing Values
 
