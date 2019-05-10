@@ -77,7 +77,7 @@
 
 # ### Thoughts & Questions
 #
-# * The code in many repositories are written in multiple languages. 
+# * The code in many repositories are written in multiple languages.
 
 # ### Prepare the Environment
 
@@ -99,6 +99,7 @@ import env
 import nltk
 from nltk.tokenize.toktok import ToktokTokenizer
 from nltk.corpus import stopwords
+
 # -
 
 # **Reload modules to capture changes**
@@ -110,6 +111,8 @@ from nltk.corpus import stopwords
 NUM_PER_PAGE = 100
 API_URL = f"https://api.github.com/search/repositories?q=stars:%3E1&sort=forks&order=desc&per_page={NUM_PER_PAGE}"
 HEADERS = {"Authorization": f"token {env.oauth_token}"}
+
+
 def github_api_req():
     data = requests.get(API_URL, headers=HEADERS).json()
     return data["items"]
@@ -122,9 +125,12 @@ def readme_url(contents_url):
     # find name of README file and construct a link to the raw text of the readme
     for file in requests.get(contents_url, headers=HEADERS).json():
         if file["name"].lower().startswith("readme"):
-            return file["download_url"]
+            return file["html_url"]
+
 
 REPO_FILE_NAME = "repos.json"
+
+
 def load_repo_metadata(use_cache=True):
     if use_cache and os.path.exists(REPO_FILE_NAME):
         with open(REPO_FILE_NAME, "r") as f:
@@ -134,18 +140,21 @@ def load_repo_metadata(use_cache=True):
         response = github_api_req()
         for repo in response:
             # get link to contents of repo
-            contents_url = repo["contents_url"][:-8]  # remove last 8 characters to get working URL
+            contents_url = repo["contents_url"][
+                :-8
+            ]  # remove last 8 characters to get working URL
 
             # find name of README file and construct a link to the raw text of the readme
             rmurl = readme_url(contents_url)
 
             # download README text
             readme_text = requests.get(rmurl, headers=HEADERS).text
-            
+
             repo["readme"] = readme_text
         with open(REPO_FILE_NAME, "w") as f:
             json.dump(response, f)
         return response
+
 
 all_repo_data = load_repo_metadata()
 # -
@@ -223,20 +232,31 @@ def repo_metadata(api_dict):
     repo_id = api_dict["id"]
     user_name = api_dict["owner"]["login"]
     repo_name = api_dict["name"]
-    
+
     # find the predominant programming language
     lang = api_dict["language"]
-    
+
     # find README text
-    readme_text = api_dict["readme"]
-    
-    return dict(repo_id=repo_id, user_name=user_name, repo_name=repo_name, lang=lang, readme=readme_text)
+    soup = BeautifulSoup(api_dict["readme"], "html.parser")
+    readme_text = soup.find("div", class_="Box mt-3 position-relative").text
+    readme_text = readme_text[readme_text.find("History") + 7 :]
+
+    return dict(
+        repo_id=repo_id,
+        user_name=user_name,
+        repo_name=repo_name,
+        lang=lang,
+        readme=readme_text,
+    )
+
 
 some_repo_data = all_repo_metadata(all_repo_data)
 # -
 
 some_repo_data[:3]
 
+
+# **Clean, stem, lemmatize, and remove stopwords**
 
 # + {"endofcell": "--"}
 # # +
@@ -266,7 +286,6 @@ def normalize_text(text):
 
 def remove_chars(text):
     return re.sub(r"[^A-Za-z0-9\s]", "", text)
-
 
 
 def basic_clean(text):
@@ -315,7 +334,6 @@ def prep_readme(repo_data):
 
     copy["lemmatized"] = lemmatize(copy["clean"])
 
-    
     return copy
 
 
@@ -323,30 +341,223 @@ def prep_readme_data(all_repo_data):
     return [prep_readme(repo) for repo in all_repo_data]
 
 
-df_orig = pd.DataFrame(prep_readme_data(some_repo_data))
+df = pd.DataFrame(prep_readme_data(some_repo_data))
 # --
 
 # ### Summarize Data
 
-df_orig.head()
+df.head()
 
-df_orig.describe(include="all")
+df.describe(include="all")
 
-# ### Handle Missing Values
+# ### Fill NaNs with "None"
 
-# ### Handle Duplicates
+df.isna().sum()
 
-# ### Fix Data Types
+df = df.fillna("None")
 
-# ### Handle Outliers
+df.isna().sum()
 
 # ### Check Missing Values
 
 # ## Exploration  <a name="exploration"></a>
 
+langs = pd.concat(
+    [df.lang.value_counts(), df.lang.value_counts(normalize=True)], axis=1
+)
+langs.columns = ["n", "percent"]
+langs
+
+# ### Extract words from readmes for each language
+
+# +
+top_five = langs[:5].index
+pprint(top_five)
+
+langs_words = {}
+for lang in top_five:
+    langs_words[lang] = " ".join(df[df.lang == lang].lemmatized)
+pprint(langs_words)
+# -
+
+all_words = " ".join(df.lemmatized)
+
+lang_freqs = {
+    lang: pd.Series(readme.split()).value_counts()
+    for lang, readme in langs_words.items()
+}
+pprint(lang_freqs)
+
+lang_list = lang_freqs.values()
+lang_list
+
+# +
+all_freqs = (
+    pd.concat([all_words].append(lang_freqs.values()), axis=1, sort=True)
+    .set_axis(["all"].append(lang_freqs.keys()), axis=1, inplace=False)
+    .fillna(0)
+    .apply(lambda s: s.astype(int))
+)
+
+all_freqs.head()
+# -
+
 # ### Train-Test Split
+df.user_name.duplicated().sum()
+
+df.user_name.value_counts().head(8)
+
+df.lang.value_counts()
+
+labels = pd.concat(
+    [df.lang.value_counts(), df.lang.value_counts(normalize=True)], axis=1
+)
+labels.columns = ["n", "percent"]
+labels
+
+javascript_words = df[df.lang == "JavaScript"].clean
+none_words = df[df.lang == "None"].clean
+python_words = df[df.lang == "Python"].clean
+java_words = df[df.lang == "Java"].clean
+html_words = df[df.lang == "HTML"].clean
+all_words = df.clean
+
+none_words
+
+word_counts = pd.DataFrame(lang_freqs)
+
+word_counts.head(10)
+
+word_counts.fillna(0, inplace=True)
+
+word_counts.head()
+
+word_counts.dtypes
+
+word_counts["all"] = word_counts.sum(axis=1)
+
+word_counts.sort_values(by="all", ascending=False).head(10)
+
+pd.concat(
+    [
+        word_counts[word_counts.JavaScript == 0]
+        .sort_values(by="Python")
+        .tail(6),
+        word_counts[word_counts.Python == 0]
+        .sort_values(by="JavaScript")
+        .tail(6),
+    ]
+)
+
 
 # ### Visualizations
+
+# %matplotlib inline
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# +
+# figure out the percentage
+(
+    word_counts.assign(
+        p_javascript=word_counts.JavaScript / word_counts["all"],
+        p_none=word_counts["None"] / word_counts["all"],
+        p_python=word_counts.Python / word_counts["all"],
+        p_java=word_counts.Java / word_counts["all"],
+        p_html=word_counts.HTML / word_counts["all"],
+    )
+    .sort_values(by="all")[
+        ["p_javascript", "p_none", "p_python", "p_java", "p_html"]
+    ]
+    .tail(20)
+    .sort_values("p_java")
+    .plot.barh(stacked=True)
+)
+
+plt.title("Proportion of Spam vs Ham for the 20 most common words")
+# -
+
+(
+    word_counts[
+        (word_counts.JavaScript > 5)
+        & (word_counts.Python > 5)
+        & (word_counts["None"] > 5)
+        & (word_counts.Java > 5)
+        & (word_counts.HTML > 5)
+    ]
+    .assign(
+        ratio=lambda df: df.JavaScript
+        / (df.Python / df["None"] / df.Java / df.HTML + 0.01)
+    )
+    .sort_values(by="ratio")
+    .pipe(lambda df: pd.concat([df.head(), df.tail()]))
+)
+
+# # Word Cloud!!
+
+# +
+from wordcloud import WordCloud
+
+
+all_cloud = WordCloud(
+    background_color="white", height=600, width=800
+).generate(" ".join(all_words))
+javascript_cloud = WordCloud(
+    background_color="white", height=600, width=800
+).generate(" ".join(javascript_words))
+none_cloud = WordCloud(
+    background_color="white", height=600, width=800
+).generate(" ".join(none_words))
+python_cloud = WordCloud(
+    background_color="white", height=600, width=800
+).generate(" ".join(python_words))
+java_cloud = WordCloud(
+    background_color="white", height=600, width=800
+).generate(" ".join(java_words))
+html_cloud = WordCloud(
+    background_color="white", height=600, width=800
+).generate(" ".join(html_words))
+
+# plt.figure(figsize=(10, 8))
+axs = [
+    plt.axes([0, 0, 0.5, 1]),
+    plt.axes([0.5, 0.5, 0.5, 0.5]),
+    plt.axes([0.5, 0, 0.5, 0.5]),
+    plt.axes([0.5, 0, 0.5, 0.5]),
+    plt.axes([0.5, 0, 0.5, 0.5]),
+    plt.axes([0.5, 0, 0.5, 0.5]),
+]
+
+axs[0].imshow(all_cloud)
+axs[1].imshow(javascript_cloud)
+axs[2].imshow(none_cloud)
+axs[3].imshow(python_cloud)
+axs[4].imshow(java_cloud)
+axs[5].imshow(html_cloud)
+
+axs[0].set_title("All Words")
+axs[1].set_title("JavaScript")
+axs[2].set_title("None")
+axs[3].set_title("Python")
+axs[4].set_title("Java")
+axs[5].set_title("HTML")
+
+for ax in axs:
+    ax.axis("off")
+
+
+# -
+
+# # Biograms
+
+# +
+top_20_ham_bigrams = (
+    pd.Series(nltk.ngrams(javascript_words, 2)).value_counts().head(20)
+)
+
+top_20_ham_bigrams.head()
+# -
+
 
 # ### Statistical Tests
 
