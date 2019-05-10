@@ -100,6 +100,11 @@ import nltk
 from nltk.tokenize.toktok import ToktokTokenizer
 from nltk.corpus import stopwords
 
+# %matplotlib inline
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from wordcloud import WordCloud
 # -
 
 # **Reload modules to capture changes**
@@ -362,13 +367,15 @@ df.isna().sum()
 
 # ## Exploration  <a name="exploration"></a>
 
+# **Most common languages**
+
 langs = pd.concat(
     [df.lang.value_counts(), df.lang.value_counts(normalize=True)], axis=1
 )
 langs.columns = ["n", "percent"]
 langs
 
-# ### Extract words from readmes for each language
+# ### Extract words from readmes for top 5 languages
 
 # +
 top_five = langs[:5].index
@@ -380,7 +387,13 @@ for lang in top_five:
 pprint(langs_words)
 # -
 
+# **Series of all words and their frequencies**
+
 all_words = " ".join(df.lemmatized)
+all_words = pd.Series(all_words.split()).value_counts()
+all_words.head()
+
+# **Dictionary of top 5 languages and the frequency of their words**
 
 lang_freqs = {
     lang: pd.Series(readme.split()).value_counts()
@@ -388,117 +401,65 @@ lang_freqs = {
 }
 pprint(lang_freqs)
 
-lang_list = lang_freqs.values()
-lang_list
+# **Most frequent words overall and how they measure in top 5 languages**
 
 # +
-# all_freqs = (
-#     pd.concat([all_words].append(lang_freqs.values()), axis=1, sort=True)
-#     .set_axis(["all"].append(lang_freqs.keys()), axis=1, inplace=False)
-#     .fillna(0)
-#     .apply(lambda s: s.astype(int))
-# )
+all_freqs = (
+    pd.concat([all_words] + list(lang_freqs.values()), axis=1, sort=True)
+    .set_axis(["all"] + list(lang_freqs.keys()), axis=1, inplace=False)
+    .fillna(0)
+    .apply(lambda s: s.astype(int))
+)
 
-# all_freqs.head()
+all_freqs.sort_values(by="all", ascending=False)
 # -
 
-# ### Train-Test Split
-df.user_name.duplicated().sum()
+# **Most common user's**
 
 df.user_name.value_counts().head(8)
 
-df.lang.value_counts()
-
-labels = pd.concat(
-    [df.lang.value_counts(), df.lang.value_counts(normalize=True)], axis=1
-)
-labels.columns = ["n", "percent"]
-labels
-
-javascript_words = df[df.lang == "JavaScript"].clean
-none_words = df[df.lang == "None"].clean
-python_words = df[df.lang == "Python"].clean
-java_words = df[df.lang == "Java"].clean
-html_words = df[df.lang == "HTML"].clean
-all_words = df.clean
-
-none_words
-
-word_counts = pd.DataFrame(lang_freqs)
-
-word_counts.head(10)
-
-word_counts.fillna(0, inplace=True)
-
-word_counts.head()
-
-word_counts.dtypes
-
-word_counts["all"] = word_counts.sum(axis=1)
-
-word_counts.sort_values(by="all", ascending=False).head(10)
+# **Most common unique words between JavaScript and Python**
 
 pd.concat(
     [
-        word_counts[word_counts.JavaScript == 0]
+        all_freqs[all_freqs.JavaScript == 0]
         .sort_values(by="Python")
         .tail(6),
-        word_counts[word_counts.Python == 0]
+        all_freqs[all_freqs.Python == 0]
         .sort_values(by="JavaScript")
         .tail(6),
     ]
 )
 
 
+# **Top 5 word unique to top 5 languages**
+
+unique_words = pd.DataFrame()
+for lang in all_freqs.drop(columns="all"):
+    unique = all_freqs.drop(columns="all")[all_freqs[lang] == all_freqs.drop(columns=["all"]).sum(axis=1)]
+    unique_words = pd.concat([unique_words, unique.sort_values(by=lang, ascending=False).head(5)])
+
+unique_words
+
 # ### Visualizations
 
-# %matplotlib inline
-import matplotlib.pyplot as plt
-import seaborn as sns
+# **Visualize 
 
 # +
-# figure out the percentage
-(
-    word_counts.assign(
-        p_javascript=word_counts.JavaScript / word_counts["all"],
-        p_none=word_counts["None"] / word_counts["all"],
-        p_python=word_counts.Python / word_counts["all"],
-        p_java=word_counts.Java / word_counts["all"],
-        p_html=word_counts.HTML / word_counts["all"],
-    )
-    .sort_values(by="all")[
-        ["p_javascript", "p_none", "p_python", "p_java", "p_html"]
-    ]
-    .tail(20)
-    .sort_values("p_java")
-    .plot.barh(stacked=True)
-)
+lang_probas = all_freqs[["all"]]
+for lang in all_freqs.drop(columns="all"):
+    lang_probas[f"p_{lang}"] = all_freqs[lang] / all_freqs["all"]
 
-plt.title("Proportion of Spam vs Ham for the 20 most common words")
+lang_probas["p_other"] = 1.0 - lang_probas.drop(columns="all").sum(axis=1)
+
+lang_probas.sort_values(by="all").tail(15).drop(columns="all").plot.barh(stacked=True, figsize=(12, 8))
+plt.title("Probability of Language of Top 15 Most Common Words")
+plt.show()
 # -
-
-(
-    word_counts[
-        (word_counts.JavaScript > 5)
-        & (word_counts.Python > 5)
-        & (word_counts["None"] > 5)
-        & (word_counts.Java > 5)
-        & (word_counts.HTML > 5)
-    ]
-    .assign(
-        ratio=lambda df: df.JavaScript
-        / (df.Python / df["None"] / df.Java / df.HTML + 0.01)
-    )
-    .sort_values(by="ratio")
-    .pipe(lambda df: pd.concat([df.head(), df.tail()]))
-)
 
 # # Word Cloud!!
 
 # +
-from wordcloud import WordCloud
-
-
 all_cloud = WordCloud(
     background_color="white", height=600, width=800
 ).generate(" ".join(all_words))
