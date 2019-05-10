@@ -392,14 +392,14 @@ lang_list = lang_freqs.values()
 lang_list
 
 # +
-all_freqs = (
-    pd.concat([all_words].append(lang_freqs.values()), axis=1, sort=True)
-    .set_axis(["all"].append(lang_freqs.keys()), axis=1, inplace=False)
-    .fillna(0)
-    .apply(lambda s: s.astype(int))
-)
+# all_freqs = (
+#     pd.concat([all_words].append(lang_freqs.values()), axis=1, sort=True)
+#     .set_axis(["all"].append(lang_freqs.keys()), axis=1, inplace=False)
+#     .fillna(0)
+#     .apply(lambda s: s.astype(int))
+# )
 
-all_freqs.head()
+# all_freqs.head()
 # -
 
 # ### Train-Test Split
