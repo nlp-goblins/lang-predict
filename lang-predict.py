@@ -363,7 +363,7 @@ pprint(top_five)
 
 langs_words = {}
 for lang in top_five:
-    langs_words[lang] = " ".join(df[df.lang == lang].clean)
+    langs_words[lang] = " ".join(df[df.lang == lang].lemmatized)
     
 pprint(langs_words)
 # -
@@ -371,9 +371,121 @@ pprint(langs_words)
 lang_freqs = {lang: pd.Series(readme.split()).value_counts() for lang, readme in langs_words.items()}
 pprint(lang_freqs)
 
-# ### Train-Test Split
+df.user_name.duplicated().sum()
+
+df.user_name.value_counts().head(8)
+
+df.lang.value_counts()
+
+labels = pd.concat([df.lang.value_counts(),
+                    df.lang.value_counts(normalize=True)], axis=1)
+labels.columns = ['n', 'percent']
+labels
+
+javascript_words = (df[df.lang == 'JavaScript'].clean)
+none_words = (df[df.lang == 'None'].clean)
+python_words = (df[df.lang == 'Python'].clean)
+java_words = (df[df.lang == 'Java'].clean)
+html_words = (df[df.lang == 'HTML'].clean)
+all_words = df.clean
+
+none_words
+
+word_counts = pd.DataFrame(lang_freqs)
+
+word_counts.head(10)
+
+word_counts.fillna(0, inplace=True)
+
+word_counts.head()
+
+word_counts.dtypes
+
+word_counts['all'] = word_counts.sum(axis=1)
+
+word_counts.sort_values(by='all', ascending=False).head(10)
+
+pd.concat([word_counts[word_counts.JavaScript == 0].sort_values(by='Python').tail(6),
+           word_counts[word_counts.Python == 0].sort_values(by='JavaScript').tail(6)])
+
 
 # ### Visualizations
+
+# %matplotlib inline
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# +
+# figure out the percentage
+(word_counts
+ .assign(p_javascript=word_counts.JavaScript / word_counts['all'],
+         p_none=word_counts['None'] / word_counts['all'],
+         p_python=word_counts.Python / word_counts['all'],
+         p_java=word_counts.Java / word_counts['all'],
+         p_html=word_counts.HTML / word_counts['all'])
+ .sort_values(by='all')
+ [['p_javascript', 'p_none', 'p_python', 'p_java', 'p_html']]
+ .tail(20)
+ .sort_values('p_java')
+ .plot.barh(stacked=True))
+
+plt.title('Proportion of Spam vs Ham for the 20 most common words')
+# -
+
+(word_counts
+ [(word_counts.JavaScript > 5) & (word_counts.Python > 5) & (word_counts['None'] > 5) & (word_counts.Java > 5) & (word_counts.HTML > 5)]
+ .assign(ratio=lambda df: df.JavaScript / (df.Python / df['None'] / df.Java / df.HTML + .01))
+ .sort_values(by='ratio')
+ .pipe(lambda df: pd.concat([df.head(), df.tail()])))
+
+# # Word Cloud!!
+
+# +
+from wordcloud import WordCloud
+
+
+all_cloud = WordCloud(background_color='white', height=600, width=800).generate(' '.join(all_words))
+javascript_cloud = WordCloud(background_color='white', height=600, width=800).generate(' '.join(javascript_words))
+none_cloud = WordCloud(background_color='white', height=600, width=800).generate(' '.join(none_words))
+python_cloud = WordCloud(background_color='white', height=600, width=800).generate(' '.join(python_words))
+java_cloud = WordCloud(background_color='white', height=600, width=800).generate(' '.join(java_words))
+html_cloud = WordCloud(background_color='white', height=600, width=800).generate(' '.join(html_words))
+
+# plt.figure(figsize=(10, 8))
+axs = [plt.axes([0, 0, .5, 1]), plt.axes([.5, .5, .5, .5]), plt.axes([.5, 0, .5, .5]), plt.axes([.5, 0, .5, .5]),plt.axes([.5, 0, .5, .5]),plt.axes([.5, 0, .5, .5])]
+
+axs[0].imshow(all_cloud)
+axs[1].imshow(javascript_cloud)
+axs[2].imshow(none_cloud)
+axs[3].imshow(python_cloud)
+axs[4].imshow(java_cloud)
+axs[5].imshow(html_cloud)
+
+axs[0].set_title('All Words')
+axs[1].set_title('JavaScript')
+axs[2].set_title('None')
+axs[3].set_title('Python')
+axs[4].set_title('Java')
+axs[5].set_title('HTML')
+
+for ax in axs: ax.axis('off')
+    
+
+# -
+
+# # Biograms
+
+# +
+top_20_ham_bigrams = (pd.Series(nltk.ngrams(javascript_words, 2))
+                      .value_counts()
+                      .head(20))
+
+top_20_ham_bigrams.head()
+# -
+
+
+
+
 
 # ### Statistical Tests
 
