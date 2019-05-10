@@ -443,8 +443,6 @@ unique_words
 
 # ### Visualizations
 
-# **Visualize 
-
 # +
 lang_probas = all_freqs[["all"]]
 for lang in all_freqs.drop(columns="all"):
@@ -459,65 +457,23 @@ plt.show()
 
 # # Word Cloud!!
 
+langs_words["JavaScript"]
+
 # +
-all_cloud = WordCloud(
-    background_color="white", height=600, width=800
-).generate(" ".join(all_words))
-javascript_cloud = WordCloud(
-    background_color="white", height=600, width=800
-).generate(" ".join(javascript_words))
-none_cloud = WordCloud(
-    background_color="white", height=600, width=800
-).generate(" ".join(none_words))
-python_cloud = WordCloud(
-    background_color="white", height=600, width=800
-).generate(" ".join(python_words))
-java_cloud = WordCloud(
-    background_color="white", height=600, width=800
-).generate(" ".join(java_words))
-html_cloud = WordCloud(
-    background_color="white", height=600, width=800
-).generate(" ".join(html_words))
 
-# plt.figure(figsize=(10, 8))
-axs = [
-    plt.axes([0, 0, 0.5, 1]),
-    plt.axes([0.5, 0.5, 0.5, 0.5]),
-    plt.axes([0.5, 0, 0.5, 0.5]),
-    plt.axes([0.5, 0, 0.5, 0.5]),
-    plt.axes([0.5, 0, 0.5, 0.5]),
-    plt.axes([0.5, 0, 0.5, 0.5]),
-]
-
-axs[0].imshow(all_cloud)
-axs[1].imshow(javascript_cloud)
-axs[2].imshow(none_cloud)
-axs[3].imshow(python_cloud)
-axs[4].imshow(java_cloud)
-axs[5].imshow(html_cloud)
-
-axs[0].set_title("All Words")
-axs[1].set_title("JavaScript")
-axs[2].set_title("None")
-axs[3].set_title("Python")
-axs[4].set_title("Java")
-axs[5].set_title("HTML")
-
-for ax in axs:
-    ax.axis("off")
-
-
+for lang, words in langs_words.items():
+    plt.figure(figsize=(12, 8))
+    cloud = WordCloud(background_color='white', height=600, width=800).generate(words)
+    plt.title(lang)
+    plt.axis("off")
+    plt.imshow(cloud)
 # -
 
 # # Biograms
 
-# +
-top_20_ham_bigrams = (
-    pd.Series(nltk.ngrams(javascript_words, 2)).value_counts().head(20)
-)
-
-top_20_ham_bigrams.head()
-# -
+for lang, words in langs_words.items():
+    ham_bigrams = pd.Series(nltk.ngrams(ham_words.split(), 2)).value_counts()
+    print(ham_bigrams.head()
 
 
 # ### Statistical Tests
