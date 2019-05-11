@@ -14,9 +14,20 @@
 # ---
 
 # # Title
-# By
+# By Nicole Garza & Michael P. Moran
 
 # ## TODO
+#
+# - Task Division
+#     - Michael
+#         - [ ] Remove repos with no programming language
+#         - [ ] remove chinese repos
+#         - [ ] ensure only english words
+#         - [ ] look at run on words
+#         - [ ] add number of words of README as feature
+#     - Nicole
+#         - [ ] Bag of words modeling
+#         - [ ] Add sentiment feature
 #
 # - [ ] Acquisition
 #     - [ ] Select what list of repos to scrape.
@@ -80,6 +91,7 @@
 # * The code in many repositories are written in multiple languages.
 # * Should we remove all words not in an English dictionary?
 # * Try random sampling of the repos. How many would we need for a reliable result?
+# * Take out repos with No programming language
 
 # ### Prepare the Environment
 
@@ -115,6 +127,15 @@ from sklearn.metrics import classification_report
 from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
+from sklearn.neighbors import KNeighborsClassifier
+
+from scipy.spatial.distance import cdist
+from scipy.cluster.vq import kmeans2, whiten
+from sklearn.cluster import KMeans
+from sklearn import metrics
+
+from sklearn.tree import DecisionTreeClassifier
+
 # -
 
 # **Reload modules to capture changes**
@@ -138,6 +159,7 @@ REPO_FILE_NAME = "repos.json"
 def github_api_req(page):
     data = requests.get(API_URL + f"&page={page}", headers=HEADERS).json()
     return data["items"]
+
 
 def readme_url(contents_url):
     # find name of README file and construct a link to the raw text of the readme
@@ -185,7 +207,9 @@ all_repo_data[:3]
 
 # +
 def all_repo_metadata(api_data):
-    return [repo_metadata(repo) for repo in api_data if repo["readme"] is not None]
+    return [
+        repo_metadata(repo) for repo in api_data if repo["readme"] is not None
+    ]
 
 
 def repo_metadata(api_dict):
@@ -234,6 +258,7 @@ def pipe(v, *fns):
 def map_exhaust(func, *iters):
     for args in zip(*iters):
         func(*args)
+
 
 def normalize_text(text):
     return (
@@ -288,7 +313,11 @@ def prep_readme(repo_data):
     copy = deepcopy(repo_data)
 
     copy["clean"] = pipe(
-        copy["readme"], basic_clean, tokenize, remove_stopwords, remove_bogus_words
+        copy["readme"],
+        basic_clean,
+        tokenize,
+        remove_stopwords,
+        remove_bogus_words,
     )
 
     copy["stemmed"] = stem(copy["clean"])
@@ -343,7 +372,9 @@ langs
 top_five = list(langs[:5].index)
 pprint(top_five)
 
-lang_grouped = df.lang.apply(lambda lang: lang if lang in top_five else "Other").rename("lang_grouped")
+lang_grouped = df.lang.apply(
+    lambda lang: lang if lang in top_five else "Other"
+).rename("lang_grouped")
 
 # pprint(lang_grouped)
 df = pd.concat([df, lang_grouped], axis=1)
@@ -386,7 +417,9 @@ pprint(word_freq_by_lang)
 
 # +
 top_words = (
-    pd.concat([words_by_freq] + list(word_freq_by_lang.values()), axis=1, sort=True)
+    pd.concat(
+        [words_by_freq] + list(word_freq_by_lang.values()), axis=1, sort=True
+    )
     .set_axis(["all"] + list(word_freq_by_lang.keys()), axis=1, inplace=False)
     .fillna(0)
     .apply(lambda s: s.astype(int))
@@ -407,8 +440,15 @@ df.user_name.value_counts().head(5)
 
 unique_words_by_lang = pd.DataFrame()
 for lang in top_words.drop(columns="all"):
-    unique = top_words.drop(columns="all")[top_words[lang] == top_words.drop(columns=["all"]).sum(axis=1)]
-    unique_words_by_lang = pd.concat([unique_words_by_lang, unique.sort_values(by=lang, ascending=False).head(5)])
+    unique = top_words.drop(columns="all")[
+        top_words[lang] == top_words.drop(columns=["all"]).sum(axis=1)
+    ]
+    unique_words_by_lang = pd.concat(
+        [
+            unique_words_by_lang,
+            unique.sort_values(by=lang, ascending=False).head(5),
+        ]
+    )
 
 unique_words_by_lang
 
@@ -421,7 +461,9 @@ for lang in top_words.drop(columns="all"):
 
 lang_prob["p_other"] = 1.0 - lang_prob.drop(columns="all").sum(axis=1)
 
-lang_prob.sort_values(by="all").tail(15).drop(columns="all").plot.barh(stacked=True, figsize=(12, 8))
+lang_prob.sort_values(by="all").tail(15).drop(columns="all").plot.barh(
+    stacked=True, figsize=(12, 8)
+)
 plt.title("Probability of Language of Top 15 Most Common Words")
 plt.show()
 # -
@@ -430,7 +472,9 @@ plt.show()
 
 for lang, words in words_by_lang.items():
     plt.figure(figsize=(12, 8))
-    cloud = WordCloud(background_color='white', height=600, width=800).generate(words)
+    cloud = WordCloud(
+        background_color="white", height=600, width=800
+    ).generate(words)
     plt.title(lang)
     plt.axis("off")
     plt.imshow(cloud)
@@ -442,29 +486,38 @@ for lang, words in words_by_lang.items():
 for lang, words in words_by_lang.items():
     bigrams = pd.Series(nltk.ngrams(words.split(), 2)).value_counts()
     print(f"{lang}\n{bigrams.head()}")
-    
-    # Bar plot the bigrams
-    bigrams.sort_values().tail(10).plot.barh(color='pink', width=.9, figsize=(10, 6))
 
-    plt.title(f'10 Most frequently occurring {lang} bigrams')
-    plt.ylabel('Bigram')
-    plt.xlabel('# Occurrences')
+    # Bar plot the bigrams
+    bigrams.sort_values().tail(10).plot.barh(
+        color="pink", width=0.9, figsize=(10, 6)
+    )
+
+    plt.title(f"10 Most frequently occurring {lang} bigrams")
+    plt.ylabel("Bigram")
+    plt.xlabel("# Occurrences")
 
     # make the labels pretty
     ticks, _ = plt.yticks()
-    labels = bigrams.sort_values().tail(10).reset_index()['index'].apply(lambda t: " ".join(t))
+    labels = (
+        bigrams.sort_values()
+        .tail(10)
+        .reset_index()["index"]
+        .apply(lambda t: " ".join(t))
+    )
     _ = plt.yticks(ticks, labels)
     plt.show()
 
 
 for lang, words in words_by_lang.items():
     bigrams = pd.Series(nltk.ngrams(words.split(), 2)).value_counts()
-    
+
     # word cloud
     data = {" ".join(k): v for k, v in bigrams.to_dict().items()}
-    img = WordCloud(background_color='white', width=800, height=400).generate_from_frequencies(data)
+    img = WordCloud(
+        background_color="white", width=800, height=400
+    ).generate_from_frequencies(data)
     plt.figure(figsize=(12, 8))
-    plt.axis('off')
+    plt.axis("off")
     plt.title(lang)
     plt.imshow(img)
 
@@ -473,28 +526,37 @@ for lang, words in words_by_lang.items():
 for lang, words in words_by_lang.items():
     trigrams = pd.Series(nltk.ngrams(words.split(), 3)).value_counts()
     print(f"{lang}\n{trigrams.head()}")
-    
-    # Bar plot the trigrams
-    trigrams.sort_values().tail(10).plot.barh(color='pink', width=.9, figsize=(10, 6))
 
-    plt.title(f'10 Most frequently occurring {lang} trigrams')
-    plt.ylabel('Trigram')
-    plt.xlabel('# Occurrences')
+    # Bar plot the trigrams
+    trigrams.sort_values().tail(10).plot.barh(
+        color="pink", width=0.9, figsize=(10, 6)
+    )
+
+    plt.title(f"10 Most frequently occurring {lang} trigrams")
+    plt.ylabel("Trigram")
+    plt.xlabel("# Occurrences")
 
     # make the labels pretty
     ticks, _ = plt.yticks()
-    labels = trigrams.sort_values().tail(10).reset_index()['index'].apply(lambda t: " ".join(t))
+    labels = (
+        trigrams.sort_values()
+        .tail(10)
+        .reset_index()["index"]
+        .apply(lambda t: " ".join(t))
+    )
     _ = plt.yticks(ticks, labels)
     plt.show()
 
 for lang, words in words_by_lang.items():
     trigrams = pd.Series(nltk.ngrams(words.split(), 3)).value_counts()
-    
+
     # word cloud
     data = {" ".join(k): v for k, v in trigrams.to_dict().items()}
-    img = WordCloud(background_color='white', width=800, height=400).generate_from_frequencies(data)
+    img = WordCloud(
+        background_color="white", width=800, height=400
+    ).generate_from_frequencies(data)
     plt.figure(figsize=(12, 8))
-    plt.axis('off')
+    plt.axis("off")
     plt.title(lang)
     plt.imshow(img)
 
@@ -507,6 +569,8 @@ for lang, words in words_by_lang.items():
 # ### Summarize Conclusions
 
 # ## Modeling <a name="modeling"></a>
+
+# ### For ALL Words
 
 # **Calculate IDF for each word**
 
@@ -534,19 +598,29 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 tfidf = TfidfVectorizer()
 tfidfs = tfidf.fit_transform(df.lemmatized)
-
+df_tfidf = pd.DataFrame(tfidfs.todense(), columns=tfidf.get_feature_names())
 # -
+
+# **Words with highest tf-idf**
+
+df_tfidf.sum().sort_values(ascending=False).head(10)
+
+# **Words with lowest tf-idf**
+
+df_tfidf.sum().sort_values(ascending=False).tail(10)
 
 # ### Train-test split
 
 y = df.lang_grouped
-X = pd.DataFrame(tfidfs.todense(), columns=tfidf.get_feature_names())
+X = df_tfidf
 # X = tfidfs.todense()
 # df_tfidfs.head()
 X.shape
 
 # +
-X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=.2, random_state=123)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, stratify=y, test_size=0.2, random_state=123
+)
 
 train = pd.DataFrame(dict(actual=y_train))
 test = pd.DataFrame(dict(actual=y_test))
@@ -560,43 +634,286 @@ type(X_train)
 
 sns.distplot(X_train.values.flatten())
 
+# ### KNN
+
+# **Elbow**
+
+# +
+ks = range(1, 50)
+sse = []
+for k in ks:
+    kmeans = KMeans(n_clusters=k)
+    kmeans.fit(X_train)
+
+    # inertia: Sum of squared distances of samples to their closest cluster center.
+    sse.append(kmeans.inertia_)
+
+print(pd.DataFrame(dict(k=ks, sse=sse)))
+
+plt.plot(ks, sse, "bx-")
+plt.xlabel("k")
+plt.ylabel("SSE")
+plt.title("The Elbow Method showing the optimal k")
+plt.show()
+# -
+
+knn = KNeighborsClassifier(n_neighbors=5, weights="uniform")
+knn.fit(X_train, y_train)
+y_pred_train = knn.predict(X_train)
+y_pred_proba_train = knn.predict_proba(X_train)
+
+# **Compute accuracy of model**
+
+print(
+    "Accuracy of KNN classifier on training set: {:.2f}".format(
+        knn.score(X_train, y_train)
+    )
+)
+print()
+print(confusion_matrix(y_train, y_pred_train))
+print()
+print(classification_report(y_train, y_pred_train))
+
+y_pred_test = knn.predict(X_test)
+y_pred_proba_test = knn.predict_proba(X_test)
+# I think ypred needs to be assigned the predictions on X_test
+print(
+    "Accuracy of KNN classifier on test set: {:.2f}".format(
+        knn.score(X_test, y_test)
+    )
+)
+print()
+print(confusion_matrix(y_test, y_pred_test))
+print()
+print(classification_report(y_test, y_pred_test))
+
+import matplotlib.pyplot as plt
+
+k_range = range(1, 20)
+scores = []
+for k in k_range:
+    knn = KNeighborsClassifier(n_neighbors=k)
+    knn.fit(X_train, y_train)
+    scores.append(knn.score(X_test, y_test))
+plt.figure()
+plt.xlabel("k")
+plt.ylabel("accuracy")
+plt.scatter(k_range, scores)
+# plt.xticks([0,5,10,15,20])
+
 # ### Naive Bayes Model
 
 gnb = GaussianNB()
 gnb.fit(X_train, y_train)
 y_train_pred = gnb.predict(X_train)
-print('Accuracy of GNB classifier on training set: {:.2f}'
-     .format(gnb.score(X_train, y_train)))
+print(
+    "Accuracy of GNB classifier on training set: {:.2f}".format(
+        gnb.score(X_train, y_train)
+    )
+)
 print(confusion_matrix(y_train, y_train_pred))
 print(classification_report(y_train, y_train_pred))
 
 y_test_pred = gnb.predict(X_test)
-print('Accuracy of GNB classifier on test set: {:.2f}'
-     .format(gnb.score(X_test, y_test)))
+print(
+    "Accuracy of GNB classifier on test set: {:.2f}".format(
+        gnb.score(X_test, y_test)
+    )
+)
 print(confusion_matrix(y_test, y_test_pred))
 print(classification_report(y_test, y_test_pred))
 
 # ### Logistic Regression
 
 # +
-lm = LogisticRegression(random_state=123, solver="newton-cg", multi_class="multinomial", class_weight="balanced").fit(X_train, y_train)
+lm = LogisticRegression(
+    random_state=123,
+    solver="newton-cg",
+    multi_class="multinomial",
+    class_weight="balanced",
+).fit(X_train, y_train)
 
-train['predicted'] = lm.predict(X_train)
-test['predicted'] = lm.predict(X_test)
+train["predicted"] = lm.predict(X_train)
+test["predicted"] = lm.predict(X_test)
 # -
 
-print('Accuracy: {:.2%}'.format(accuracy_score(train.actual, train.predicted)))
-print('---')
-print('Confusion Matrix')
+print("Accuracy: {:.2%}".format(accuracy_score(train.actual, train.predicted)))
+print("---")
+print("Confusion Matrix")
 print(pd.crosstab(train.predicted, train.actual))
-print('---')
+print("---")
 print(classification_report(train.actual, train.predicted))
 
-print('Accuracy: {:.2%}'.format(accuracy_score(test.actual, test.predicted)))
-print('---')
-print('Confusion Matrix')
+print("Accuracy: {:.2%}".format(accuracy_score(test.actual, test.predicted)))
+print("---")
+print("Confusion Matrix")
 print(pd.crosstab(test.predicted, test.actual))
-print('---')
+print("---")
+print(classification_report(test.actual, test.predicted))
+
+# ### Decision Tree
+
+clf = DecisionTreeClassifier(
+    criterion="entropy", max_depth=5, random_state=123
+)
+
+clf.fit(X_train, y_train)
+
+y_pred = clf.predict(X_train)
+y_pred[0:5]
+
+y_pred_proba = clf.predict_proba(X_train)
+# y_pred_proba
+
+# ### Computing the accuracy of our model
+
+print(
+    "Accuracy of Decision Tree classifier on training set: {:.2f}".format(
+        clf.score(X_train, y_train)
+    )
+)
+
+print(confusion_matrix(y_train, y_pred))
+
+print(classification_report(y_train, y_pred))
+
+print(
+    "Accuracy of Decision Tree classifier on test set: {:.2f}".format(
+        clf.score(X_test, y_test)
+    )
+)
+
+# ### Random Forest
+
+from sklearn.ensemble import RandomForestClassifier
+
+# +
+clf = RandomForestClassifier(
+    n_estimators=100,
+    min_samples_leaf=3,
+    max_depth=20,
+    random_state=123,
+    class_weight="balanced",
+)
+clf.fit(X_train, y_train)
+
+print(clf.feature_importances_)
+# -
+
+train["predicted"] = clf.predict(X_train)
+test["predicted"] = clf.predict(X_test)
+
+print("Accuracy: {:.2%}".format(accuracy_score(train.actual, train.predicted)))
+print("---")
+print("Confusion Matrix")
+print(pd.crosstab(train.predicted, train.actual))
+print("---")
+print(classification_report(train.actual, train.predicted))
+
+print("Accuracy: {:.2%}".format(accuracy_score(test.actual, test.predicted)))
+print("---")
+print("Confusion Matrix")
+print(pd.crosstab(test.predicted, test.actual))
+print("---")
+print(classification_report(test.actual, test.predicted))
+
+# # TEST USING TFIDFVectorizer
+
+# ### For Top 500 Words by TF-IDF
+#
+# Top 100 did not work well
+
+TOP_NWORDS = 500
+# top_nwords = top_words.sort_values(by="all", ascending=False).head(500)
+# top_nwords.index.values
+
+# ### Calculate TF-IDF for each word
+
+# +
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+tfidf = TfidfVectorizer(strip_accents="unicode", max_features=TOP_NWORDS)
+tfidfs = tfidf.fit_transform(df.lemmatized)
+df_tfidf = pd.DataFrame(tfidfs.todense(), columns=tfidf.get_feature_names())
+# -
+
+# ### Train-test split
+
+# +
+y = df.lang_grouped
+
+# X = tfidfs.todense()
+# df_tfidfs.head()
+X = df_tfidf
+X.shape
+
+# +
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, stratify=y, test_size=0.2, random_state=123
+)
+
+train = pd.DataFrame(dict(actual=y_train))
+test = pd.DataFrame(dict(actual=y_test))
+# -
+
+X_train.shape
+
+type(X_train)
+
+X_train.sum().sort_values(ascending=False)
+
+# **What does the distribution look like?**
+
+sns.distplot(X_train.values.flatten())
+
+# ### Naive Bayes Model
+
+gnb = GaussianNB()
+gnb.fit(X_train, y_train)
+y_train_pred = gnb.predict(X_train)
+print(
+    "Accuracy of GNB classifier on training set: {:.2f}".format(
+        gnb.score(X_train, y_train)
+    )
+)
+print(confusion_matrix(y_train, y_train_pred))
+print(classification_report(y_train, y_train_pred))
+
+y_test_pred = gnb.predict(X_test)
+print(
+    "Accuracy of GNB classifier on test set: {:.2f}".format(
+        gnb.score(X_test, y_test)
+    )
+)
+print(confusion_matrix(y_test, y_test_pred))
+print(classification_report(y_test, y_test_pred))
+
+# ### Logistic Regression
+
+# +
+lm = LogisticRegression(
+    random_state=123,
+    solver="newton-cg",
+    multi_class="multinomial",
+    class_weight="balanced",
+).fit(X_train, y_train)
+
+train["predicted"] = lm.predict(X_train)
+test["predicted"] = lm.predict(X_test)
+# -
+
+print("Accuracy: {:.2%}".format(accuracy_score(train.actual, train.predicted)))
+print("---")
+print("Confusion Matrix")
+print(pd.crosstab(train.predicted, train.actual))
+print("---")
+print(classification_report(train.actual, train.predicted))
+
+print("Accuracy: {:.2%}".format(accuracy_score(test.actual, test.predicted)))
+print("---")
+print("Confusion Matrix")
+print(pd.crosstab(test.predicted, test.actual))
+print("---")
 print(classification_report(test.actual, test.predicted))
 
 # ### Random Forest
@@ -604,34 +921,161 @@ print(classification_report(test.actual, test.predicted))
 from sklearn.ensemble import RandomForestClassifier
 
 # +
-clf = RandomForestClassifier(n_estimators=100, max_depth=20,
-                             random_state=123, class_weight="balanced")
+clf = RandomForestClassifier(
+    n_estimators=100, max_depth=20, random_state=123, class_weight="balanced"
+)
 clf.fit(X_train, y_train)
 
 print(clf.feature_importances_)
 # -
 
-train['predicted'] = clf.predict(X_train)
-test['predicted'] = clf.predict(X_test)
+train["predicted"] = clf.predict(X_train)
+test["predicted"] = clf.predict(X_test)
 
-print('Accuracy: {:.2%}'.format(accuracy_score(train.actual, train.predicted)))
-print('---')
-print('Confusion Matrix')
+print("Accuracy: {:.2%}".format(accuracy_score(train.actual, train.predicted)))
+print("---")
+print("Confusion Matrix")
 print(pd.crosstab(train.predicted, train.actual))
-print('---')
+print("---")
 print(classification_report(train.actual, train.predicted))
 
-print('Accuracy: {:.2%}'.format(accuracy_score(test.actual, test.predicted)))
-print('---')
-print('Confusion Matrix')
+print("Accuracy: {:.2%}".format(accuracy_score(test.actual, test.predicted)))
+print("---")
+print("Confusion Matrix")
 print(pd.crosstab(test.predicted, test.actual))
-print('---')
+print("---")
 print(classification_report(test.actual, test.predicted))
 
-# ### Feature Engineering & Selection
+# ### Using Bigrams as features
 
-# ### Train & Test Models
+# ### For Top 100 Bigrams by TF-IDF
+#
+# Top 100 did not work well
+
+TOP_NBIGRAMS = 5000
+# top_nwords = top_words.sort_values(by="all", ascending=False).head(500)
+# top_nwords.index.values
+
+# ### Calculate TF-IDF for each word
+
+# +
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+tfidf = TfidfVectorizer(
+    strip_accents="unicode", max_features=TOP_NBIGRAMS, ngram_range=(2, 2)
+)
+tfidfs = tfidf.fit_transform(df.lemmatized)
+df_tfidf = pd.DataFrame(tfidfs.todense(), columns=tfidf.get_feature_names())
+# -
+
+# ### Train-test split
+
+# +
+y = df.lang_grouped
+
+# X = tfidfs.todense()
+# df_tfidfs.head()
+X = df_tfidf
+X.shape
+
+# +
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, stratify=y, test_size=0.2, random_state=123
+)
+
+train = pd.DataFrame(dict(actual=y_train))
+test = pd.DataFrame(dict(actual=y_test))
+# -
+
+X_train.shape
+
+type(X_train)
+
+X_train.sum().sort_values(ascending=False)
+
+# **What does the distribution look like?**
+
+sns.distplot(X_train.values.flatten())
+
+# ### Naive Bayes Model
+
+gnb = GaussianNB()
+gnb.fit(X_train, y_train)
+y_train_pred = gnb.predict(X_train)
+print(
+    "Accuracy of GNB classifier on training set: {:.2f}".format(
+        gnb.score(X_train, y_train)
+    )
+)
+print(confusion_matrix(y_train, y_train_pred))
+print(classification_report(y_train, y_train_pred))
+
+y_test_pred = gnb.predict(X_test)
+print(
+    "Accuracy of GNB classifier on test set: {:.2f}".format(
+        gnb.score(X_test, y_test)
+    )
+)
+print(confusion_matrix(y_test, y_test_pred))
+print(classification_report(y_test, y_test_pred))
+
+# ### Logistic Regression
+
+# +
+lm = LogisticRegression(
+    random_state=123,
+    solver="newton-cg",
+    multi_class="multinomial",
+    class_weight="balanced",
+).fit(X_train, y_train)
+
+train["predicted"] = lm.predict(X_train)
+test["predicted"] = lm.predict(X_test)
+# -
+
+print("Accuracy: {:.2%}".format(accuracy_score(train.actual, train.predicted)))
+print("---")
+print("Confusion Matrix")
+print(pd.crosstab(train.predicted, train.actual))
+print("---")
+print(classification_report(train.actual, train.predicted))
+
+print("Accuracy: {:.2%}".format(accuracy_score(test.actual, test.predicted)))
+print("---")
+print("Confusion Matrix")
+print(pd.crosstab(test.predicted, test.actual))
+print("---")
+print(classification_report(test.actual, test.predicted))
+
+# ### Random Forest
+
+from sklearn.ensemble import RandomForestClassifier
+
+# +
+clf = RandomForestClassifier(
+    n_estimators=100, max_depth=20, random_state=123, class_weight="balanced"
+)
+clf.fit(X_train, y_train)
+
+print(clf.feature_importances_)
+# -
+
+train["predicted"] = clf.predict(X_train)
+test["predicted"] = clf.predict(X_test)
+
+print("Accuracy: {:.2%}".format(accuracy_score(train.actual, train.predicted)))
+print("---")
+print("Confusion Matrix")
+print(pd.crosstab(train.predicted, train.actual))
+print("---")
+print(classification_report(train.actual, train.predicted))
+
+print("Accuracy: {:.2%}".format(accuracy_score(test.actual, test.predicted)))
+print("---")
+print("Confusion Matrix")
+print(pd.crosstab(test.predicted, test.actual))
+print("---")
+print(classification_report(test.actual, test.predicted))
 
 # ### Summarize Conclusions
-
 
