@@ -78,6 +78,8 @@
 # ### Thoughts & Questions
 #
 # * The code in many repositories are written in multiple languages.
+# * Should we remove all words not in an English dictionary?
+# * Try random sampling of the repos. How many would we need for a reliable result?
 
 # ### Prepare the Environment
 
@@ -89,6 +91,7 @@ import re
 import unicodedata
 from functools import reduce, partial
 from copy import deepcopy
+from markdown import markdown
 
 import requests
 from bs4 import BeautifulSoup
@@ -105,35 +108,42 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from wordcloud import WordCloud
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.naive_bayes import GaussianNB
+from sklearn.metrics import classification_report
+from sklearn.metrics import confusion_matrix
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
 # -
 
 # **Reload modules to capture changes**
 
 # ## Acquisition <a name="acquisition"></a>
 
-# **Grab data for 100 most forked repos on GitHub**
+# **Grab data for 500 most forked repos on GitHub**
+
+# **Constants**
 
 NUM_PER_PAGE = 100
+PAGES = 5
 API_URL = f"https://api.github.com/search/repositories?q=stars:%3E1&sort=forks&order=desc&per_page={NUM_PER_PAGE}"
 HEADERS = {"Authorization": f"token {env.oauth_token}"}
-
-
-def github_api_req():
-    data = requests.get(API_URL, headers=HEADERS).json()
-    return data["items"]
+REPO_FILE_NAME = "repos.json"
 
 
 # **Extract necessary information**
 
 # +
+def github_api_req(page):
+    data = requests.get(API_URL + f"&page={page}", headers=HEADERS).json()
+    return data["items"]
+
 def readme_url(contents_url):
     # find name of README file and construct a link to the raw text of the readme
     for file in requests.get(contents_url, headers=HEADERS).json():
         if file["name"].lower().startswith("readme"):
-            return file["html_url"]
-
-
-REPO_FILE_NAME = "repos.json"
+            return file["download_url"]
 
 
 def load_repo_metadata(use_cache=True):
@@ -142,7 +152,9 @@ def load_repo_metadata(use_cache=True):
             contents = json.load(f)
         return contents
     else:
-        response = github_api_req()
+        response = []
+        for num in range(1, PAGES + 1):
+            response += github_api_req(num)
         for repo in response:
             # get link to contents of repo
             contents_url = repo["contents_url"][
@@ -152,8 +164,10 @@ def load_repo_metadata(use_cache=True):
             # find name of README file and construct a link to the raw text of the readme
             rmurl = readme_url(contents_url)
 
-            # download README text
-            readme_text = requests.get(rmurl, headers=HEADERS).text
+            readme_text = None  # sometimes there is no valid URL to the readme
+            if rmurl:
+                # download README text
+                readme_text = requests.get(rmurl, headers=HEADERS).text
 
             repo["readme"] = readme_text
         with open(REPO_FILE_NAME, "w") as f:
@@ -166,70 +180,12 @@ all_repo_data = load_repo_metadata()
 
 all_repo_data[:3]
 
-# ### Junk Code
-
-# +
-
-# URL_FMT = "https://github.com/search?o=desc&p={}&q=stars%3A%3E1&s=forks&type=Repositories"
-
-# max_page = data["payload"]["max_page"]
-# entries = []
-# for i in range(1, max_page + 1):
-#     url = root_endpoint + path + f"?page={i}"
-#     data = requests.get(url).json()
-#     entries += data["payload"][table]
-
-# return pd.DataFrame(entries)
-# example: "https://raw.githubusercontent.com/jtleek/datasharing/master/README.md"
-
-# read links to repositories from page
-# repos = []
-# for page_num in range(1, 11):
-#     page_url = URL_FMT.format(page_num)
-#     html = requests.get(page_url)
-#     soup = BeautifulSoup(html.content, "html.parser")
-#     # print(soup)
-#     print(type(soup))
-#     repos += soup.find_all("a", class_="v-align-middle")
-
-# print(list(repo.text for repo in repos))
-
-
-# sample = api_resp[2]
-# # store the id, username, name of repo
-# user_id = sample["id"]
-# user_name = sample["owner"]["login"]
-# repo_name = sample["name"]
-
-# print(user_id, user_name, repo_name)
-
-# # find the predominant programming language
-# lang = sample["language"]
-
-# print(lang)
-
-# # find the name of the README file (the capitalization may be off on some)
-# contents_url = sample["contents_url"][:-8]  # remove last 8 characters to get working URL
-# print(contents_url)
-
-# # find name of README file and construct a link to the raw text of the readme
-# readme_url = None
-# for file in requests.get(contents_url).json():
-#     if file["name"].lower().startswith("readme"):
-#         readme_url = file["download_url"]
-
-# print(readme_url)
-
-# # download the readme
-# print(requests.get(readme_url).text)
-
-# -
 
 # ## Preparation <a name="preparation"></a>
 
 # +
 def all_repo_metadata(api_data):
-    return [repo_metadata(repo) for repo in api_data]
+    return [repo_metadata(repo) for repo in api_data if repo["readme"] is not None]
 
 
 def repo_metadata(api_dict):
@@ -241,10 +197,11 @@ def repo_metadata(api_dict):
     # find the predominant programming language
     lang = api_dict["language"]
 
-    # find README text
-    soup = BeautifulSoup(api_dict["readme"], "html.parser")
-    readme_text = soup.find("div", class_="Box mt-3 position-relative").text
-    readme_text = readme_text[readme_text.find("History") + 7 :]
+    # render the markdown to html
+    html = markdown(api_dict["readme"])
+    # and extract the text from the html
+    soup = BeautifulSoup(html, "html.parser")
+    readme_text = soup.text
 
     return dict(
         repo_id=repo_id,
@@ -263,8 +220,7 @@ some_repo_data[:3]
 
 # **Clean, stem, lemmatize, and remove stopwords**
 
-# + {"endofcell": "--"}
-# # +
+# +
 # right to left
 def compose(*fns):
     return partial(reduce, lambda x, f: f(x), reversed(fns))
@@ -279,8 +235,6 @@ def map_exhaust(func, *iters):
     for args in zip(*iters):
         func(*args)
 
-
-# # +
 def normalize_text(text):
     return (
         unicodedata.normalize("NFKD", text)
@@ -290,14 +244,16 @@ def normalize_text(text):
 
 
 def remove_chars(text):
-    return re.sub(r"[^A-Za-z0-9\s]", "", text)
+    return re.sub(r"[^A-Za-z0-9 ]", "", re.sub(r"\s", " ", text))
+
+
+def remove_bogus_words(text):
+    no_single_words = re.sub(r"\s.{1}\s", "", text)  # remove single characters
+    return re.sub(r"http.{1,}[\s\.]*", "", no_single_words)  # remove links
 
 
 def basic_clean(text):
     return pipe(text, str.lower, normalize_text, remove_chars)
-
-
-# -
 
 
 def tokenize(text):
@@ -332,7 +288,7 @@ def prep_readme(repo_data):
     copy = deepcopy(repo_data)
 
     copy["clean"] = pipe(
-        copy["readme"], basic_clean, tokenize, remove_stopwords
+        copy["readme"], basic_clean, tokenize, remove_stopwords, remove_bogus_words
     )
 
     copy["stemmed"] = stem(copy["clean"])
@@ -347,7 +303,15 @@ def prep_readme_data(all_repo_data):
 
 
 df = pd.DataFrame(prep_readme_data(some_repo_data))
-# --
+# -
+
+# common single letter words?
+
+df[df.clean.str.contains(" j ")]
+
+# any links?
+
+df[df.clean.str.contains(" http")]
 
 # ### Summarize Data
 
@@ -355,7 +319,9 @@ df.head()
 
 df.describe(include="all")
 
-# ### Fill NaNs with "None"
+# ### Check Missing Values
+
+# #### Fill NaNs with "None" (i.e., they have no programming language)
 
 df.isna().sum()
 
@@ -363,11 +329,7 @@ df = df.fillna("None")
 
 df.isna().sum()
 
-# ### Check Missing Values
-
-# ## Exploration  <a name="exploration"></a>
-
-# **Most common languages**
+# #### Most common languages
 
 langs = pd.concat(
     [df.lang.value_counts(), df.lang.value_counts(normalize=True)], axis=1
@@ -375,106 +337,170 @@ langs = pd.concat(
 langs.columns = ["n", "percent"]
 langs
 
-# ### Extract words from readmes for top 5 languages
+# **Go with top 5 languages and roll the rest into an "other" category**
 
 # +
-top_five = langs[:5].index
+top_five = list(langs[:5].index)
 pprint(top_five)
 
-langs_words = {}
-for lang in top_five:
-    langs_words[lang] = " ".join(df[df.lang == lang].lemmatized)
-pprint(langs_words)
+lang_grouped = df.lang.apply(lambda lang: lang if lang in top_five else "Other").rename("lang_grouped")
+
+# pprint(lang_grouped)
+df = pd.concat([df, lang_grouped], axis=1)
 # -
+
+df.lang_grouped.value_counts()
+
+# ## Exploration  <a name="exploration"></a>
+
+# ### Extract words from readmes for top 5 languages (which includes "None") and "Other"
+
+# +
+# words_by_lang = {}
+# for lang in top_five:
+#     words_by_lang[lang] = " ".join(df[df.lang == lang].lemmatized)
+# pprint(words_by_lang)
+# -
+
+top_six = df.lang_grouped.value_counts().index
+words_by_lang = {}
+for lang in top_six:
+    words_by_lang[lang] = " ".join(df[df.lang_grouped == lang].lemmatized)
 
 # **Series of all words and their frequencies**
 
-all_words = " ".join(df.lemmatized)
-all_words = pd.Series(all_words.split()).value_counts()
-all_words.head()
+words_by_freq = " ".join(df.lemmatized)
+words_by_freq = pd.Series(words_by_freq.split()).value_counts()
+print("Top 5 most common words")
+words_by_freq.head()
 
-# **Dictionary of top 5 languages and the frequency of their words**
+# **Dictionary of top 5 languages + "other" and the frequency of their words**
 
-lang_freqs = {
-    lang: pd.Series(readme.split()).value_counts()
-    for lang, readme in langs_words.items()
+word_freq_by_lang = {
+    lang: pd.Series(words.split()).value_counts()
+    for lang, words in words_by_lang.items()
 }
-pprint(lang_freqs)
+pprint(word_freq_by_lang)
 
-# **Most frequent words overall and how they measure in top 5 languages**
+# **Most frequent words overall and how they measure in top 5 languages + other**
 
 # +
-all_freqs = (
-    pd.concat([all_words] + list(lang_freqs.values()), axis=1, sort=True)
-    .set_axis(["all"] + list(lang_freqs.keys()), axis=1, inplace=False)
+top_words = (
+    pd.concat([words_by_freq] + list(word_freq_by_lang.values()), axis=1, sort=True)
+    .set_axis(["all"] + list(word_freq_by_lang.keys()), axis=1, inplace=False)
     .fillna(0)
     .apply(lambda s: s.astype(int))
 )
 
-all_freqs.sort_values(by="all", ascending=False)
+top_words.sort_values(by="all", ascending=False).head(5)
 # -
 
-# **Most common user's**
+# **And least frequent**
 
-df.user_name.value_counts().head(8)
+top_words.sort_values(by="all", ascending=False).tail(5)
 
-# **Most common unique words between JavaScript and Python**
+# **Most common users**
 
-pd.concat(
-    [
-        all_freqs[all_freqs.JavaScript == 0]
-        .sort_values(by="Python")
-        .tail(6),
-        all_freqs[all_freqs.Python == 0]
-        .sort_values(by="JavaScript")
-        .tail(6),
-    ]
-)
-
+df.user_name.value_counts().head(5)
 
 # **Top 5 word unique to top 5 languages**
 
-unique_words = pd.DataFrame()
-for lang in all_freqs.drop(columns="all"):
-    unique = all_freqs.drop(columns="all")[all_freqs[lang] == all_freqs.drop(columns=["all"]).sum(axis=1)]
-    unique_words = pd.concat([unique_words, unique.sort_values(by=lang, ascending=False).head(5)])
+unique_words_by_lang = pd.DataFrame()
+for lang in top_words.drop(columns="all"):
+    unique = top_words.drop(columns="all")[top_words[lang] == top_words.drop(columns=["all"]).sum(axis=1)]
+    unique_words_by_lang = pd.concat([unique_words_by_lang, unique.sort_values(by=lang, ascending=False).head(5)])
 
-unique_words
+unique_words_by_lang
 
 # ### Visualizations
 
 # +
-lang_probas = all_freqs[["all"]]
-for lang in all_freqs.drop(columns="all"):
-    lang_probas[f"p_{lang}"] = all_freqs[lang] / all_freqs["all"]
+lang_prob = top_words[["all"]].copy()
+for lang in top_words.drop(columns="all"):
+    lang_prob[f"p_{lang}"] = top_words[lang] / top_words["all"]
 
-lang_probas["p_other"] = 1.0 - lang_probas.drop(columns="all").sum(axis=1)
+lang_prob["p_other"] = 1.0 - lang_prob.drop(columns="all").sum(axis=1)
 
-lang_probas.sort_values(by="all").tail(15).drop(columns="all").plot.barh(stacked=True, figsize=(12, 8))
+lang_prob.sort_values(by="all").tail(15).drop(columns="all").plot.barh(stacked=True, figsize=(12, 8))
 plt.title("Probability of Language of Top 15 Most Common Words")
 plt.show()
 # -
 
-# # Word Cloud!!
+# #### Word Cloud
 
-langs_words["JavaScript"]
-
-# +
-
-for lang, words in langs_words.items():
+for lang, words in words_by_lang.items():
     plt.figure(figsize=(12, 8))
     cloud = WordCloud(background_color='white', height=600, width=800).generate(words)
     plt.title(lang)
     plt.axis("off")
     plt.imshow(cloud)
-# -
 
-# # Biograms
+# ### Bigrams
 
-for lang, words in langs_words.items():
-    ham_bigrams = pd.Series(nltk.ngrams(ham_words.split(), 2)).value_counts()
-    print(ham_bigrams.head()
+# **Most common bigrams and bar plot**
 
+for lang, words in words_by_lang.items():
+    bigrams = pd.Series(nltk.ngrams(words.split(), 2)).value_counts()
+    print(f"{lang}\n{bigrams.head()}")
+    
+    # Bar plot the bigrams
+    bigrams.sort_values().tail(10).plot.barh(color='pink', width=.9, figsize=(10, 6))
+
+    plt.title(f'10 Most frequently occurring {lang} bigrams')
+    plt.ylabel('Bigram')
+    plt.xlabel('# Occurrences')
+
+    # make the labels pretty
+    ticks, _ = plt.yticks()
+    labels = bigrams.sort_values().tail(10).reset_index()['index'].apply(lambda t: " ".join(t))
+    _ = plt.yticks(ticks, labels)
+    plt.show()
+
+
+for lang, words in words_by_lang.items():
+    bigrams = pd.Series(nltk.ngrams(words.split(), 2)).value_counts()
+    
+    # word cloud
+    data = {" ".join(k): v for k, v in bigrams.to_dict().items()}
+    img = WordCloud(background_color='white', width=800, height=400).generate_from_frequencies(data)
+    plt.figure(figsize=(12, 8))
+    plt.axis('off')
+    plt.title(lang)
+    plt.imshow(img)
+
+# ### Trigram
+
+for lang, words in words_by_lang.items():
+    trigrams = pd.Series(nltk.ngrams(words.split(), 3)).value_counts()
+    print(f"{lang}\n{trigrams.head()}")
+    
+    # Bar plot the trigrams
+    trigrams.sort_values().tail(10).plot.barh(color='pink', width=.9, figsize=(10, 6))
+
+    plt.title(f'10 Most frequently occurring {lang} trigrams')
+    plt.ylabel('Trigram')
+    plt.xlabel('# Occurrences')
+
+    # make the labels pretty
+    ticks, _ = plt.yticks()
+    labels = trigrams.sort_values().tail(10).reset_index()['index'].apply(lambda t: " ".join(t))
+    _ = plt.yticks(ticks, labels)
+    plt.show()
+
+for lang, words in words_by_lang.items():
+    trigrams = pd.Series(nltk.ngrams(words.split(), 3)).value_counts()
+    
+    # word cloud
+    data = {" ".join(k): v for k, v in trigrams.to_dict().items()}
+    img = WordCloud(background_color='white', width=800, height=400).generate_from_frequencies(data)
+    plt.figure(figsize=(12, 8))
+    plt.axis('off')
+    plt.title(lang)
+    plt.imshow(img)
+
+# **Conclusion**
+#
+# Trigrams are not that helpful. They appear to be mostly junk or unique to a specific repo.
 
 # ### Statistical Tests
 
@@ -482,8 +508,130 @@ for lang, words in langs_words.items():
 
 # ## Modeling <a name="modeling"></a>
 
+# **Calculate IDF for each word**
+
+# +
+# # This is not working and is taking way too long.
+# def idf(word):
+#     n_occurences = sum([1 for index, row in df.iterrows() if word in row.lemmatized])
+#     return len(df) / n_occurences
+
+# # put the unique words into a data frame
+# (pd.DataFrame(dict(word=words_by_freq.index))
+#  # calculate the idf for each word
+#  .assign(idf=lambda df: df.word.apply(idf))
+#  # sort the data for presentation purposes
+#  .set_index('word')
+#  .sort_values(by='idf', ascending=False))
+# -
+
+# The words whose IDF equals the number of documents occur in only one document.
+
+# ### Calculate TF-IDF for each word
+
+# +
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+tfidf = TfidfVectorizer()
+tfidfs = tfidf.fit_transform(df.lemmatized)
+
+# -
+
+# ### Train-test split
+
+y = df.lang_grouped
+X = pd.DataFrame(tfidfs.todense(), columns=tfidf.get_feature_names())
+# X = tfidfs.todense()
+# df_tfidfs.head()
+X.shape
+
+# +
+X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=.2, random_state=123)
+
+train = pd.DataFrame(dict(actual=y_train))
+test = pd.DataFrame(dict(actual=y_test))
+# -
+
+X_train.shape
+
+type(X_train)
+
+# **What does the distribution look like?**
+
+sns.distplot(X_train.values.flatten())
+
+# ### Naive Bayes Model
+
+gnb = GaussianNB()
+gnb.fit(X_train, y_train)
+y_train_pred = gnb.predict(X_train)
+print('Accuracy of GNB classifier on training set: {:.2f}'
+     .format(gnb.score(X_train, y_train)))
+print(confusion_matrix(y_train, y_train_pred))
+print(classification_report(y_train, y_train_pred))
+
+y_test_pred = gnb.predict(X_test)
+print('Accuracy of GNB classifier on test set: {:.2f}'
+     .format(gnb.score(X_test, y_test)))
+print(confusion_matrix(y_test, y_test_pred))
+print(classification_report(y_test, y_test_pred))
+
+# ### Logistic Regression
+
+# +
+lm = LogisticRegression(random_state=123, solver="newton-cg", multi_class="multinomial", class_weight="balanced").fit(X_train, y_train)
+
+train['predicted'] = lm.predict(X_train)
+test['predicted'] = lm.predict(X_test)
+# -
+
+print('Accuracy: {:.2%}'.format(accuracy_score(train.actual, train.predicted)))
+print('---')
+print('Confusion Matrix')
+print(pd.crosstab(train.predicted, train.actual))
+print('---')
+print(classification_report(train.actual, train.predicted))
+
+print('Accuracy: {:.2%}'.format(accuracy_score(test.actual, test.predicted)))
+print('---')
+print('Confusion Matrix')
+print(pd.crosstab(test.predicted, test.actual))
+print('---')
+print(classification_report(test.actual, test.predicted))
+
+# ### Random Forest
+
+from sklearn.ensemble import RandomForestClassifier
+
+# +
+clf = RandomForestClassifier(n_estimators=100, max_depth=20,
+                             random_state=123, class_weight="balanced")
+clf.fit(X_train, y_train)
+
+print(clf.feature_importances_)
+# -
+
+train['predicted'] = clf.predict(X_train)
+test['predicted'] = clf.predict(X_test)
+
+print('Accuracy: {:.2%}'.format(accuracy_score(train.actual, train.predicted)))
+print('---')
+print('Confusion Matrix')
+print(pd.crosstab(train.predicted, train.actual))
+print('---')
+print(classification_report(train.actual, train.predicted))
+
+print('Accuracy: {:.2%}'.format(accuracy_score(test.actual, test.predicted)))
+print('---')
+print('Confusion Matrix')
+print(pd.crosstab(test.predicted, test.actual))
+print('---')
+print(classification_report(test.actual, test.predicted))
+
 # ### Feature Engineering & Selection
 
 # ### Train & Test Models
 
 # ### Summarize Conclusions
+
+
