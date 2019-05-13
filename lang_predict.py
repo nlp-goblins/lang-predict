@@ -582,8 +582,6 @@ def confmatrix(y_actual, y_pred):
 
 # ### Train test split
 
-# # Experiment: exclude those repos not in the top 5
-
 print("before removal", len(df))
 df = df[df.lang_grouped.isin(top_five)]
 print("after removal", len(df))
