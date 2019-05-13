@@ -22,18 +22,19 @@
 #     - Michael
 #         - [X] Remove repos with no programming language
 #         - [X] Fit the vectorizer to the X_test, not the whole thing pre-split!!
-#         - [ ] remove chinese repos
+#         - [X] remove non-english repos
 #         - [ ] ensure only english words
 #         - [ ] look at run on words
 #         - [ ] build a function to rank my model (see https://towardsdatascience.com/beyond-accuracy-precision-and-recall-3da06bea9f6c)
 #         - [ ] add function to make a prediction on a given README; make sure other requirements of the project are done as well
+#         - [X] throw out most frequent words and most frequent bigrams. I think they may be throwing the model off.
 #     - Nicole
 #         - [ ] Bag of words modeling
 #         - [ ] Add sentiment feature
 #         - [ ] add number of words of README as feature
 #         - [ ] try stemmed and clean
 
-# ## Table of contents
+#   ## Table of contents
 # 1. [Project Planning](#project-planning)
 # 1. [Acquisition](#acquisition)
 # 1. [Preparation](#preparation)
@@ -68,6 +69,8 @@
 # * Should we remove all words not in an English dictionary?
 # * Try random sampling of the repos. How many would we need for a reliable result?
 # * Take out repos with No programming language
+#
+# * After taking out the "Other" programming language category. The accuracy of the model shot way up! I believe this category acquired so much language that was used in repos for the top 5 most popular the models were having difficulty with choosing which category.
 
 # ### Prepare the Environment
 
@@ -112,6 +115,8 @@ from sklearn import metrics
 
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
+
+from langdetect import detect
 # -
 
 # **Reload modules to capture changes**
@@ -324,9 +329,23 @@ df.head()
 
 df.describe(include="all")
 
-# **Remove rows with "None" as language**
-
 df.lang.value_counts()
+
+# ### Remove Repos with empty clean column
+
+print("Before removal:", len(df))
+df = df[df.clean.str.len() != 0]
+print("After removal:", len(df))
+
+# ### Remove Non-English Repos
+
+# **What does the language spread look like?**
+
+df.clean.apply(detect).value_counts()
+
+print("Before removal:", len(df))
+df = df[df.clean.apply(detect) == "en"]
+print("After removal:", len(df))
 
 # ### Check Missing Values
 
@@ -365,6 +384,10 @@ df = pd.concat([df, lang_grouped], axis=1)
 # -
 
 df.lang_grouped.value_counts()
+
+# ### Ensure no missing values
+
+df.isnull().sum()
 
 # ## Exploration  <a name="exploration"></a>
 
@@ -562,9 +585,29 @@ def confmatrix(y_actual, y_pred):
 
 # ### Train test split
 
+# # Experiment: exclude those repos not in the top 5
+
+print("before removal", len(df))
+df = df[df.lang_grouped.isin(top_five)]
+print("after removal", len(df))
+
+df.lang_grouped.value_counts()
+
+# **Clean gives better results than lemmatized or stemmed**
+
+# +
+# X_train, X_test, y_train, y_test = train_test_split(
+#     df.lemmatized, df.lang_grouped, stratify=df.lang_grouped, test_size=0.2, random_state=123
+# )
+
+# X_train, X_test, y_train, y_test = train_test_split(
+#     df.stemmed, df.lang_grouped, stratify=df.lang_grouped, test_size=0.2, random_state=123
+# )
+
 X_train, X_test, y_train, y_test = train_test_split(
-    df.lemmatized, df.lang_grouped, stratify=df.lang_grouped, test_size=0.2, random_state=123
+    df.clean, df.lang_grouped, stratify=df.lang_grouped, test_size=0.2, random_state=123
 )
+# -
 
 X_train.shape
 
@@ -573,25 +616,6 @@ X_train.head()
 type(X_train)
 
 # ### For ALL Words
-
-# **Calculate IDF for each word**
-
-# +
-# # This is not working and is taking way too long.
-# def idf(word):
-#     n_occurences = sum([1 for index, row in df.iterrows() if word in row.lemmatized])
-#     return len(df) / n_occurences
-
-# # put the unique words into a data frame
-# (pd.DataFrame(dict(word=words_by_freq.index))
-#  # calculate the idf for each word
-#  .assign(idf=lambda df: df.word.apply(idf))
-#  # sort the data for presentation purposes
-#  .set_index('word')
-#  .sort_values(by='idf', ascending=False))
-# -
-
-# The words whose IDF equals the number of documents occur in only one document.
 
 # ### Calculate TF-IDF for each word
 
@@ -605,13 +629,15 @@ df_tfidf = pd.DataFrame(train_tfidf.todense(), columns=tfidf.get_feature_names()
 test_tfidf = tfidf.transform(X_test)
 # -
 
+train_tfidf.shape
+
 # **Words with highest tf-idf**
 
-df_tfidf.sum().sort_values(ascending=False).head(10)
+df_tfidf.max().sort_values(ascending=False).head(10)
 
 # **Words with lowest tf-idf**
 
-df_tfidf.sum().sort_values(ascending=False).tail(10)
+df_tfidf.max().sort_values(ascending=False).tail(10)
 
 # **What does the distribution look like?**
 
@@ -685,10 +711,8 @@ def knnmodel(X_train, X_test, y_train, y_test, **kwargs):
     # plt.xticks([0,5,10,15,20])
 
 
-# **Elbow**
-
 knnmodel(train_tfidf, test_tfidf, y_train, y_test,
-    n_neighbors=8, weights="uniform")
+    n_neighbors=11, weights="uniform")
 
 
 # ### Naive Bayes Model
@@ -728,6 +752,8 @@ def nbmodel(X_train, X_test, y_train, y_test, **kwargs):
 
 nbmodel(train_tfidf.todense(), test_tfidf.todense(), y_train, y_test)
 
+
+# # BEST MODEL USING TOP 500 FORKED REPOS AND LIMITING TO TOP 5 LANGUAGES!!!
 
 # ### Logistic Regression
 
@@ -771,7 +797,7 @@ lrmodel(train_tfidf, test_tfidf, y_train, y_test, random_state=123,
 # ### Decision Tree
 
 clf = DecisionTreeClassifier(
-    criterion="entropy", max_depth=5, random_state=123
+    criterion="entropy", max_depth=20, random_state=123, class_weight="balanced"
 )
 
 clf.fit(train_tfidf, y_train)
@@ -840,24 +866,19 @@ def rfmodel(X_train, X_test, y_train, y_test, **kwargs):
 
 rfmodel(train_tfidf, test_tfidf, y_train, y_test,
     n_estimators=100,
-    min_samples_leaf=3,
-    max_depth=20,
+    max_depth=10,
     random_state=123,
     class_weight="balanced",
 )
 
-# ### For Top 500 Words by TF-IDF
-#
-# Top 100 did not work well
-
-TOP_NWORDS = 500
-# top_nwords = top_words.sort_values(by="all", ascending=False).head(500)
-# top_nwords.index.values
+# ### Excluding frequent words
 
 # ### Calculate TF-IDF for each word
 
 # +
-tfidf = TfidfVectorizer(strip_accents="unicode", max_features=TOP_NWORDS)
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+tfidf = TfidfVectorizer(max_df=0.05)
 train_tfidf = tfidf.fit_transform(X_train)
 df_tfidf = pd.DataFrame(train_tfidf.todense(), columns=tfidf.get_feature_names())
 
@@ -866,36 +887,127 @@ test_tfidf = tfidf.transform(X_test)
 
 train_tfidf.shape
 
-test_tfidf.shape
+# **Words with highest tf-idf**
 
-df_tfidf.sum().sort_values(ascending=False)
+df_tfidf.max().sort_values(ascending=False).head(10)
+
+# **Words with lowest tf-idf**
+
+df_tfidf.max().sort_values(ascending=False).tail(10)
 
 # **What does the distribution look like?**
 
 sns.distplot(train_tfidf.todense().flatten())
 
-# ### Naive Bayes Model
-
-nbmodel(train_tfidf.todense(), test_tfidf.todense(), y_train, y_test)
-
-# ### Logistic Regression
-
-lrmodel(train_tfidf, test_tfidf, y_train, y_test,
-    random_state=123,
+lrmodel(train_tfidf, test_tfidf, y_train, y_test, random_state=123,
     solver="newton-cg",
     multi_class="multinomial",
+    class_weight="balanced")
+
+rfmodel(train_tfidf, test_tfidf, y_train, y_test,
+    n_estimators=1000,
+    min_samples_leaf=3,
+    max_depth=20,
+    random_state=123,
     class_weight="balanced",
 )
 
-# ### Random Forest
+# **Conclusion**
+#
+# Logistic regression and random forest improved slightly. Maybe there's something too excluding frequent words.**
+
+# ### Excluding least frequent words
+
+# ### Calculate TF-IDF for each word
+
+# +
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+tfidf = TfidfVectorizer(min_df=0.01)
+train_tfidf = tfidf.fit_transform(X_train)
+df_tfidf = pd.DataFrame(train_tfidf.todense(), columns=tfidf.get_feature_names())
+
+test_tfidf = tfidf.transform(X_test)
+# -
+
+train_tfidf.shape
+
+# **Words with highest tf-idf**
+
+df_tfidf.max().sort_values(ascending=False).head(10)
+
+# **Words with lowest tf-idf**
+
+df_tfidf.max().sort_values(ascending=False).tail(10)
+
+# **What does the distribution look like?**
+
+sns.distplot(train_tfidf.todense().flatten())
+
+lrmodel(train_tfidf, test_tfidf, y_train, y_test, random_state=123,
+    solver="newton-cg",
+    multi_class="multinomial",
+    class_weight="balanced")
 
 rfmodel(train_tfidf, test_tfidf, y_train, y_test,
-    n_estimators=100, max_depth=20, random_state=123, class_weight="balanced"
+    n_estimators=1000,
+    min_samples_leaf=3,
+    max_depth=20,
+    random_state=123,
+    class_weight="balanced",
 )
+
+# **Conclusions**
+#
+# Logistic regression is worse from when excluding the most frequent words. However, random forest improved over both the model with all words and the model excluding the most frequent words.
+
+# ### Excluding most and least frequent words
+
+# ### Calculate TF-IDF for each word
+
+# +
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+tfidf = TfidfVectorizer(min_df=0.01, max_df=0.05)
+train_tfidf = tfidf.fit_transform(X_train)
+df_tfidf = pd.DataFrame(train_tfidf.todense(), columns=tfidf.get_feature_names())
+
+test_tfidf = tfidf.transform(X_test)
+# -
+
+train_tfidf.shape
+
+# **Words with highest tf-idf**
+
+df_tfidf.max().sort_values(ascending=False).head(10)
+
+# **Words with lowest tf-idf**
+
+df_tfidf.max().sort_values(ascending=False).tail(10)
+
+# **What does the distribution look like?**
+
+sns.distplot(train_tfidf.todense().flatten())
+
+lrmodel(train_tfidf, test_tfidf, y_train, y_test, random_state=123,
+    solver="newton-cg",
+    multi_class="multinomial",
+    class_weight="balanced")
+
+rfmodel(train_tfidf, test_tfidf, y_train, y_test,
+    n_estimators=100,
+    max_depth=20,
+    random_state=123,
+    class_weight="balanced",
+)
+
+# **Conclusions**
+#
+# LR is not as good here as the model excluding the most common words. RF does not have the best numbers.
 
 # ### Using Bigrams as features
 
-# ### For Top 500 Bigrams by TF-IDF
+# ### TF-IDF
 #
 # Top 100 did not work well
 
@@ -909,7 +1021,9 @@ TOP_NBIGRAMS = 5_000
 tfidf = TfidfVectorizer(
     strip_accents="unicode", max_features=TOP_NBIGRAMS, ngram_range=(2, 2)
 )
-
+# tfidf = TfidfVectorizer(
+#     strip_accents="unicode", ngram_range=(2, 2)
+# )
 train_tfidf = tfidf.fit_transform(X_train)
 df_tfidf = pd.DataFrame(train_tfidf.todense(), columns=tfidf.get_feature_names())
 
@@ -920,7 +1034,9 @@ train_tfidf.shape
 
 test_tfidf.shape
 
-df_tfidf.sum().sort_values(ascending=False)
+df_tfidf.max().sort_values(ascending=False).head(10)
+
+df_tfidf.max().sort_values(ascending=False).tail(10)
 
 # **What does the distribution look like?**
 
@@ -946,6 +1062,8 @@ rfmodel(train_tfidf, test_tfidf, y_train, y_test,
 )
 
 # ### Summarize Conclusions
+
+
 
 
 
