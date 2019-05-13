@@ -8,7 +8,7 @@ from nltk.tokenize.toktok import ToktokTokenizer
 from nltk.corpus import stopwords
 from functools import partial, reduce
 
-MODEL_OBJ = "knnmodel.obj"
+MODEL_OBJ = "lrmodel.obj"
 TFIDF_OBJ = "tfidf.obj"
 
 # right to left

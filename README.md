@@ -8,5 +8,6 @@ README file.
 The Jupyter notebook contains our code and analysis. The predictor.py (which
 depends on lang_predict.py) file contains a function that will predict
 the programming language of a repository based on the README text as input.
+**When using predictor.py, the input file must be read in binary mode!**
 
 Our presentation slides are [here](https://docs.google.com/presentation/d/1K-gjVJIrpZKbCTfmjfqh3AUROFjLPfiPqW7j0b8dqis/edit?usp=sharing).
