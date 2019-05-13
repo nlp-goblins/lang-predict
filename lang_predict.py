@@ -16,24 +16,6 @@
 # # README Prophesy
 # By Nicole Garza & Michael P. Moran
 
-# ## TODO
-#
-# - Task Division
-#     - Michael
-#         - [X] Remove repos with no programming language
-#         - [X] Fit the vectorizer to the X_test, not the whole thing pre-split!!
-#         - [X] remove non-english repos
-#         - [ ] look at run on words
-#         - [ ] add function to make a prediction on a given README; make sure other requirements of the project are done as well
-#         - [X] throw out most frequent words and most frequent bigrams. I think they may be throwing the model off.
-#         - [ ] use as features only words unique to each language
-#         - [ ] Also try rebalancing the dataset so Javascript and Java are not overrepresented
-#     - Nicole
-#         - [X] Bag of words modeling
-#         - [X] Add sentiment feature
-#         - [ ] add number of words of README as feature
-#         - [X] try stemmed and clean
-
 #   ## Table of contents
 # 1. [Project Planning](#project-planning)
 # 1. [Acquisition](#acquisition)
@@ -57,10 +39,10 @@
 
 # * Acquisition
 #     * Acquiring the data was challenging. We had two main options: (1) scrape the HTML-rendered search results and (2) use the JSON API. We chose to use the JSON API because it allowed dictionary-based access to the information we needed. We did not have to identify the correct HTML tag or do anything else associated with scraping. The JSON API also allowed us to download many more repos faster than scraping the HTML.
-#     * We also had the choice of scraping the HTML rendered README or downloading the raw README file. Acquiring the raw README was significantly easier, so we chose thisGitHub's API only returns a raw README file, not the rendered HTML version (although it's available in a link).
+#     * We also had the choice of scraping the HTML rendered README or downloading the raw README file. Acquiring the raw README was significantly easier, so we chose this. However, GitHub's API only returns a raw README file, not the rendered HTML version (although it's available in a link).
 # * Preparation
 #     * We processed the raw README using a markdown module, which rendered it to HTML. We then used Beautiful Soup to extract the text. We removed single character words (which was pointless because the sklearn vectorizers do this already) and also removed links.
-#     * We also removed non-English repos given that we are ASCII standardizing. Thus, our model is for English repos only. We dropped repos with no programming language, so our model has this limitation.
+#     * We also removed non-English repos given that we are ASCII normalizing. Thus, our model is for English repos only. We dropped repos with no programming language, so our model has this limitation.
 # * Exploration
 #     * The most common languages were JavaScript, Java, Python, C++, and HTML. JavaScript and Java are heavily overrepresented. If we had more time, we would have rebalanced the dataset, so they do not predominate.
 #     * The most common words look like generic programming terms ("use", "code", "file") and do not appear to be useful indicators of the language (except for JavaScript, which we hope would indicate JavaScript). Also, there is significant overlap of the most common bigrams for the languages. Thus, bigrams may not perform better than single words.
@@ -74,18 +56,14 @@
 # ### Data Dictionary & Domain Knowledge
 
 # ### Hypotheses
-# * I expect to see JavaScript and Python as the two most common languages used based on current popularity
-#     - Yes, among the top 100 most-forked repos, but it's Java and Javascript when we grab repos outside the top 100.
 # * The primary language may be mentioned in the README. But some repositories mention multiple languages, so this may interfere with this method.
 # * The number of words may be an indication of the language. Older repositories are probably written in certain languages and because of their age, may have more documentation.
-# * The sentiment score of the README may be indicative of the language
-#     - No. The languages all have a sentiment score of 0, except for C++
 
 # ### Thoughts & Questions
 #
 # * The code in many repositories are written in multiple languages. We will go with the most predominant language.
-# * Take out repos with No programming language
-# * After taking out the "Other" programming language category. The accuracy of the model shot way up! I believe this category acquired so much language that was used in the top5 repos the models were having difficulty choosing the class.
+# * Take out repos with no programming language
+# * After taking out the "Other" programming language category, the accuracy of the model shot way up! I believe this category acquired so much language that was used in the top5 repos the models were having difficulty choosing the class.
 #
 
 # ### Prepare the Environment
@@ -99,6 +77,7 @@ import unicodedata
 from functools import reduce, partial
 from copy import deepcopy
 from markdown import markdown
+import pickle
 
 import requests
 from bs4 import BeautifulSoup
@@ -499,7 +478,7 @@ for lang, words in words_by_lang.items():
 
 # **Conclusions**
 #
-# "project", "use' are common words among the languages, but other than these, the most cmmon words among the languages are different.
+# "project", "use' are common words among the languages, but other than these, the most common words among the languages are different.
 
 # ### Bigrams
 
@@ -725,6 +704,8 @@ def knnmodel(X_train, X_test, y_train, y_test, **kwargs):
     plt.ylabel("accuracy")
     plt.scatter(k_range, scores)
     # plt.xticks([0,5,10,15,20])
+    
+    return knn
 
 
 knnmodel(train_tfidf, test_tfidf, y_train, y_test,
@@ -764,12 +745,12 @@ def nbmodel(X_train, X_test, y_train, y_test, **kwargs):
     print(confmatrix(y_test, y_pred_test))
     print()
     print(classification_report(y_test, y_pred_test))
+    
+    return gnb
 
 
 nbmodel(train_tfidf.todense(), test_tfidf.todense(), y_train, y_test)
 
-
-# # BEST MODEL USING TOP 500 FORKED REPOS AND LIMITING TO TOP 5 LANGUAGES!!!
 
 # ### Logistic Regression
 
@@ -803,6 +784,8 @@ def lrmodel(X_train, X_test, y_train, y_test, **kwargs):
     print(confmatrix(y_test, y_pred_test))
     print()
     print(classification_report(y_test, y_pred_test))
+    
+    return lm
 
 
 lrmodel(train_tfidf, test_tfidf, y_train, y_test, random_state=123,
@@ -878,6 +861,8 @@ def rfmodel(X_train, X_test, y_train, y_test, **kwargs):
     print(confmatrix(y_test, y_pred_test))
     print()
     print(classification_report(y_test, y_pred_test))
+    
+    return clf
 
 
 rfmodel(train_tfidf, test_tfidf, y_train, y_test,
@@ -942,6 +927,9 @@ df_tfidf = pd.DataFrame(train_tfidf.todense(), columns=tfidf.get_feature_names()
 test_tfidf = tfidf.transform(X_test)
 # -
 
+with open("tfidf.obj", 'wb') as fp:
+    pickle.dump(tfidf, fp)
+
 train_tfidf.shape
 
 # **Words with highest tf-idf**
@@ -956,10 +944,17 @@ df_tfidf.max().sort_values(ascending=False).tail(10)
 
 sns.distplot(train_tfidf.todense().flatten())
 
-lrmodel(train_tfidf, test_tfidf, y_train, y_test, random_state=123,
+lm = lrmodel(train_tfidf, test_tfidf, y_train, y_test, random_state=123,
     solver="newton-cg",
     multi_class="multinomial",
     class_weight="balanced")
+
+# # Best Model
+#
+# #### Save It
+
+with open("lrmodel.obj", 'wb') as fp:
+    pickle.dump(lm, fp)
 
 rfmodel(train_tfidf, test_tfidf, y_train, y_test,
     n_estimators=1000,
@@ -1011,13 +1006,11 @@ rfmodel(train_tfidf, test_tfidf, y_train, y_test,
 
 # **Conclusions**
 #
-# Excluding the least common words gives me the best results on the test dataset. However, all the models that exclude the least or most frequent words do not perform as well as not excluding them. Thus, I don't think it's a good idea to exclude the most or least frequent words. 
+# Results are very mixed when excluding the most and/or least frequent words. Sometimes the results of the model improve and sometimes they get worse.
 
 # ### Using Bigrams as features
 
 # ### TF-IDF
-#
-# Top 100 did not work well
 
 TOP_NBIGRAMS = 5_000
 # top_nwords = top_words.sort_values(by="all", ascending=False).head(500)
@@ -1103,19 +1096,3 @@ rfmodel(train_bow, test_bow, y_train, y_test,
 # **Conclusions**
 #
 # For the most part, bag of words performs worse than TF-IDF, except for the random forest model.
-
-# # Sentiment analysis
-
-# +
-from afinn import Afinn
-
-afinn = Afinn()
-df["sentiment"] = df.lemmatized.apply(afinn.score)
-df.groupby("lang").sentiment.mean()
-# -
-
-afinn = Afinn()
-df["sentiment"] = df.clean.apply(afinn.score)
-df.groupby("lang").sentiment.mean()
-
-
