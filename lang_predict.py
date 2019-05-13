@@ -454,8 +454,6 @@ lang_prob = top_words[["all"]].copy()
 for lang in top_words.drop(columns="all"):
     lang_prob[f"p_{lang}"] = top_words[lang] / top_words["all"]
 
-lang_prob["p_other"] = 1.0 - lang_prob.drop(columns="all").sum(axis=1)
-
 lang_prob.sort_values(by="all").tail(15).drop(columns="all").plot.barh(
     stacked=True, figsize=(12, 8)
 )
