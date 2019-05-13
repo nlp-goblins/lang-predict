@@ -71,6 +71,16 @@
 # * Take out repos with No programming language
 #
 # * After taking out the "Other" programming language category. The accuracy of the model shot way up! I believe this category acquired so much language that was used in repos for the top 5 most popular the models were having difficulty with choosing which category.
+#
+# KNN and Random Forest have given us our best results. We encountered initial difficulty acquiring the data and cleaning it. GitHub's API only returns a raw README file, not the rendered HTML version (although it's available in a link). We downloaded a markdown rendering module to do the rendering into HTML and processed that with BS. We removed single words (although TFIDFVectorizer does this) and also URLs. We also removed non-English repos given that we are ASCII standardizing. Thus, our model is for English repos only. We dropped repos with no programming language, so our model has this limitation. An input repo must have a programming language. Our model predicts for only the top 5 most common repos. Thus, an input repo that is not predominately programmed in one of these languages will automatically be wrong. We tried to use an "other" category but this sorely hurt our models performance. Accuracy plummeted about 20-30 percentage points on average. It may be because other had such diversity of language it was pulling repos away from their proper classification by the model. We tried using bigrams, but these did not give us better predictive power, which was not expected. The bigrams appeared to be unique overall to the individual languages.
+#
+# We may need to oversample repos written in the least common languages in order to have a model that properly classifies them.
+#
+# We also used lemmatized, stemmed, and clean version of the README. Clean appeared to outperform the others. Not really sure why at this time. Perhaps because of tech jargon and its inability to be stemmed or lemmatized due to its newness.
+#
+# We had some problems with runon words.
+#
+# If we had more time, we would add the number of words in the readme as a feature and also a sentiment analysis to see if languages have a distinct README sentiment.
 
 # ### Prepare the Environment
 
@@ -127,8 +137,8 @@ from langdetect import detect
 
 # **Constants**
 
-NUM_PER_PAGE = 100
-PAGES = 5
+NUM_PER_PAGE = 50
+PAGES = 20
 API_URL = f"https://api.github.com/search/repositories?q=stars:%3E1&sort=forks&order=desc&per_page={NUM_PER_PAGE}"
 HEADERS = {"Authorization": f"token {env.oauth_token}"}
 REPO_FILE_NAME = "repos.json"
@@ -331,10 +341,10 @@ df.describe(include="all")
 
 df.lang.value_counts()
 
-# ### Remove Repos with empty clean column
+# ### Remove repos that have one or fewer words
 
 print("Before removal:", len(df))
-df = df[df.clean.str.len() != 0]
+df = df[df.clean.apply(lambda s: len(s.split()) > 1)]
 print("After removal:", len(df))
 
 # ### Remove Non-English Repos
@@ -712,7 +722,7 @@ def knnmodel(X_train, X_test, y_train, y_test, **kwargs):
 
 
 knnmodel(train_tfidf, test_tfidf, y_train, y_test,
-    n_neighbors=11, weights="uniform")
+    n_neighbors=6, weights="uniform")
 
 
 # ### Naive Bayes Model
@@ -1062,6 +1072,7 @@ rfmodel(train_tfidf, test_tfidf, y_train, y_test,
 )
 
 # ### Summarize Conclusions
+
 
 
 
