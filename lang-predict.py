@@ -20,42 +20,18 @@
 #
 # - Task Division
 #     - Michael
-#         - [ ] Remove repos with no programming language
+#         - [X] Remove repos with no programming language
+#         - [X] Fit the vectorizer to the X_test, not the whole thing pre-split!!
 #         - [ ] remove chinese repos
 #         - [ ] ensure only english words
 #         - [ ] look at run on words
-#         - [ ] add number of words of README as feature
+#         - [ ] build a function to rank my model (see https://towardsdatascience.com/beyond-accuracy-precision-and-recall-3da06bea9f6c)
+#         - [ ] add function to make a prediction on a given README; make sure other requirements of the project are done as well
 #     - Nicole
 #         - [ ] Bag of words modeling
 #         - [ ] Add sentiment feature
-#
-# - [ ] Acquisition
-#     - [ ] Select what list of repos to scrape.
-#     - [ ] Get requests form the site.
-#     - [ ] Save responses to csv.
-# - [ ] Preparation
-#     - [ ] Prepare the data for analysis.
-# - [ ] Exploration
-#     - [ ] Answer the following prompts:
-#         - [ ] What are the most common words in READMEs?
-#         - [ ] What does the distribution of IDFs look like for the most common words?
-#         - [ ] Does the length of the README vary by language?
-#         - [ ] Do different languages use a different number of unique words?
-# - [ ] Modeling
-#     - [ ] Transform the data for machine learning; use language to predict.
-#     - [ ] Fit several models using different text repressentations.
-#     - [ ] Build a function that will take in the text of a README file, and makes a prediction of language.
-# - [ ] Delivery
-#     - [ ] Github repo
-#         - [x] This notebook.
-#         - [ ] Documentation within the notebook.
-#         - [ ] README file in the repo.
-#         - [ ] Python scripts if applicable.
-#     - [ ] Google Slides
-#         - [ ] 1-2 slides only summarizing analysis.
-#         - [ ] Visualizations are labeled.
-#         - [ ] Geared for the general audience.
-#         - [ ] Share link @ readme file and/or classroom.
+#         - [ ] add number of words of README as feature
+#         - [ ] try stemmed and clean
 
 # ## Table of contents
 # 1. [Project Planning](#project-planning)
@@ -135,7 +111,7 @@ from sklearn.cluster import KMeans
 from sklearn import metrics
 
 from sklearn.tree import DecisionTreeClassifier
-
+from sklearn.ensemble import RandomForestClassifier
 # -
 
 # **Reload modules to capture changes**
@@ -348,15 +324,23 @@ df.head()
 
 df.describe(include="all")
 
+# **Remove rows with "None" as language**
+
+df.lang.value_counts()
+
 # ### Check Missing Values
 
-# #### Fill NaNs with "None" (i.e., they have no programming language)
+# #### Remove repos that have no programming language
+
+len(df)
 
 df.isna().sum()
 
-df = df.fillna("None")
+df = df.dropna()
 
 df.isna().sum()
+
+len(df)
 
 # #### Most common languages
 
@@ -384,7 +368,7 @@ df.lang_grouped.value_counts()
 
 # ## Exploration  <a name="exploration"></a>
 
-# ### Extract words from readmes for top 5 languages (which includes "None") and "Other"
+# ### Extract words from readmes for top 5 languages and "Other"
 
 # +
 # words_by_lang = {}
@@ -436,7 +420,7 @@ top_words.sort_values(by="all", ascending=False).tail(5)
 
 df.user_name.value_counts().head(5)
 
-# **Top 5 word unique to top 5 languages**
+# **Top 5 words unique to top 5 languages**
 
 unique_words_by_lang = pd.DataFrame()
 for lang in top_words.drop(columns="all"):
@@ -560,6 +544,7 @@ for lang, words in words_by_lang.items():
     plt.title(lang)
     plt.imshow(img)
 
+
 # **Conclusion**
 #
 # Trigrams are not that helpful. They appear to be mostly junk or unique to a specific repo.
@@ -569,6 +554,23 @@ for lang, words in words_by_lang.items():
 # ### Summarize Conclusions
 
 # ## Modeling <a name="modeling"></a>
+
+def confmatrix(y_actual, y_pred):
+    df = pd.DataFrame(dict(actual=y_actual, predicted=y_pred))
+    return pd.crosstab(df.predicted, df.actual)
+
+
+# ### Train test split
+
+X_train, X_test, y_train, y_test = train_test_split(
+    df.lemmatized, df.lang_grouped, stratify=df.lang_grouped, test_size=0.2, random_state=123
+)
+
+X_train.shape
+
+X_train.head()
+
+type(X_train)
 
 # ### For ALL Words
 
@@ -597,8 +599,10 @@ for lang, words in words_by_lang.items():
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 tfidf = TfidfVectorizer()
-tfidfs = tfidf.fit_transform(df.lemmatized)
-df_tfidf = pd.DataFrame(tfidfs.todense(), columns=tfidf.get_feature_names())
+train_tfidf = tfidf.fit_transform(X_train)
+df_tfidf = pd.DataFrame(train_tfidf.todense(), columns=tfidf.get_feature_names())
+
+test_tfidf = tfidf.transform(X_test)
 # -
 
 # **Words with highest tf-idf**
@@ -609,147 +613,160 @@ df_tfidf.sum().sort_values(ascending=False).head(10)
 
 df_tfidf.sum().sort_values(ascending=False).tail(10)
 
-# ### Train-test split
-
-y = df.lang_grouped
-X = df_tfidf
-# X = tfidfs.todense()
-# df_tfidfs.head()
-X.shape
-
-# +
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, stratify=y, test_size=0.2, random_state=123
-)
-
-train = pd.DataFrame(dict(actual=y_train))
-test = pd.DataFrame(dict(actual=y_test))
-# -
-
-X_train.shape
-
-type(X_train)
-
 # **What does the distribution look like?**
 
-sns.distplot(X_train.values.flatten())
+sns.distplot(train_tfidf.todense().flatten())
+
 
 # ### KNN
 
+def knnmodel(X_train, X_test, y_train, y_test, **kwargs):
+    ks = range(1, 15)
+    sse = []
+    for k in ks:
+        kmeans = KMeans(n_clusters=k)
+        kmeans.fit(X_train)
+
+        # inertia: Sum of squared distances of samples to their closest cluster center.
+        sse.append(kmeans.inertia_)
+
+    print(pd.DataFrame(dict(k=ks, sse=sse)))
+
+    plt.plot(ks, sse, "bx-")
+    plt.xlabel("k")
+    plt.ylabel("SSE")
+    plt.title("The Elbow Method showing the optimal k")
+    plt.show()
+    
+    knn = KNeighborsClassifier(**kwargs)
+    knn.fit(X_train, y_train)
+    y_pred_train = knn.predict(X_train)
+    y_pred_proba_train = knn.predict_proba(X_train)
+    
+    print("TRAIN")
+    print()
+    print(
+        "Accuracy of KNN classifier on training set: {:.2f}".format(
+        knn.score(X_train, y_train)
+        )
+    )
+    print()
+    confmatrix(y_train, y_pred_train)
+    print()
+    print(classification_report(y_train, y_pred_train))
+    
+    y_pred_test = knn.predict(X_test)
+    y_pred_proba_test = knn.predict_proba(X_test)
+    
+    print("-" * 20)
+    print()
+    print("TEST")
+    print()
+    print(
+        "Accuracy of KNN classifier on training set: {:.2f}".format(
+        knn.score(X_test, y_test)
+        )
+    )
+    print()
+    confmatrix(y_test, y_pred_test)
+    print()
+    print(classification_report(y_test, y_pred_test))
+    
+    k_range = range(1, 20)
+    scores = []
+    for k in k_range:
+        knn = KNeighborsClassifier(n_neighbors=k)
+        knn.fit(X_train, y_train)
+        scores.append(knn.score(X_test, y_test))
+    plt.figure()
+    plt.xlabel("k")
+    plt.ylabel("accuracy")
+    plt.scatter(k_range, scores)
+    # plt.xticks([0,5,10,15,20])
+
+
 # **Elbow**
 
-# +
-ks = range(1, 50)
-sse = []
-for k in ks:
-    kmeans = KMeans(n_clusters=k)
-    kmeans.fit(X_train)
+knnmodel(train_tfidf, test_tfidf, y_train, y_test,
+    n_neighbors=8, weights="uniform")
 
-    # inertia: Sum of squared distances of samples to their closest cluster center.
-    sse.append(kmeans.inertia_)
-
-print(pd.DataFrame(dict(k=ks, sse=sse)))
-
-plt.plot(ks, sse, "bx-")
-plt.xlabel("k")
-plt.ylabel("SSE")
-plt.title("The Elbow Method showing the optimal k")
-plt.show()
-# -
-
-knn = KNeighborsClassifier(n_neighbors=5, weights="uniform")
-knn.fit(X_train, y_train)
-y_pred_train = knn.predict(X_train)
-y_pred_proba_train = knn.predict_proba(X_train)
-
-# **Compute accuracy of model**
-
-print(
-    "Accuracy of KNN classifier on training set: {:.2f}".format(
-        knn.score(X_train, y_train)
-    )
-)
-print()
-print(confusion_matrix(y_train, y_pred_train))
-print()
-print(classification_report(y_train, y_pred_train))
-
-y_pred_test = knn.predict(X_test)
-y_pred_proba_test = knn.predict_proba(X_test)
-# I think ypred needs to be assigned the predictions on X_test
-print(
-    "Accuracy of KNN classifier on test set: {:.2f}".format(
-        knn.score(X_test, y_test)
-    )
-)
-print()
-print(confusion_matrix(y_test, y_pred_test))
-print()
-print(classification_report(y_test, y_pred_test))
-
-import matplotlib.pyplot as plt
-
-k_range = range(1, 20)
-scores = []
-for k in k_range:
-    knn = KNeighborsClassifier(n_neighbors=k)
-    knn.fit(X_train, y_train)
-    scores.append(knn.score(X_test, y_test))
-plt.figure()
-plt.xlabel("k")
-plt.ylabel("accuracy")
-plt.scatter(k_range, scores)
-# plt.xticks([0,5,10,15,20])
 
 # ### Naive Bayes Model
 
-gnb = GaussianNB()
-gnb.fit(X_train, y_train)
-y_train_pred = gnb.predict(X_train)
-print(
-    "Accuracy of GNB classifier on training set: {:.2f}".format(
-        gnb.score(X_train, y_train)
+def nbmodel(X_train, X_test, y_train, y_test, **kwargs):
+    gnb = GaussianNB(**kwargs)
+    gnb.fit(X_train, y_train)
+    
+    print("TRAIN")
+    print()
+    y_pred_train = gnb.predict(X_train)
+    print(
+        "Accuracy of GNB classifier on training set: {:.2f}".format(
+            gnb.score(X_train, y_train)
+        )
     )
-)
-print(confusion_matrix(y_train, y_train_pred))
-print(classification_report(y_train, y_train_pred))
+    print()
+    print(confmatrix(y_train, y_pred_train))
+    print()
+    print(classification_report(y_train, y_pred_train))
+    
+    print("-" * 20)
+    print()
+    print("TEST")
+    print()
+    y_pred_test = gnb.predict(X_test)
+    print(
+        "Accuracy of GNB classifier on training set: {:.2f}".format(
+            gnb.score(X_test, y_test)
+        )
+    )
+    print()
+    print(confmatrix(y_test, y_pred_test))
+    print()
+    print(classification_report(y_test, y_pred_test))
 
-y_test_pred = gnb.predict(X_test)
-print(
-    "Accuracy of GNB classifier on test set: {:.2f}".format(
-        gnb.score(X_test, y_test)
-    )
-)
-print(confusion_matrix(y_test, y_test_pred))
-print(classification_report(y_test, y_test_pred))
+
+nbmodel(train_tfidf.todense(), test_tfidf.todense(), y_train, y_test)
+
 
 # ### Logistic Regression
 
-# +
-lm = LogisticRegression(
-    random_state=123,
+def lrmodel(X_train, X_test, y_train, y_test, **kwargs):
+    lm = LogisticRegression(**kwargs).fit(X_train, y_train)
+    
+    print("TRAIN")
+    print()
+    y_pred_train = lm.predict(X_train)
+    print(
+        "Accuracy of lm classifier on training set: {:.2f}".format(
+            accuracy_score(y_train, y_pred_train)
+        )
+    )
+    print()
+    print(confmatrix(y_train, y_pred_train))
+    print()
+    print(classification_report(y_train, y_pred_train))
+    
+    print("-" * 20)
+    print()
+    print("TEST")
+    print()
+    y_pred_test = lm.predict(X_test)
+    print(
+        "Accuracy of lm classifier on training set: {:.2f}".format(
+            accuracy_score(y_test, y_pred_test)
+        )
+    )
+    print()
+    print(confmatrix(y_test, y_pred_test))
+    print()
+    print(classification_report(y_test, y_pred_test))
+
+
+lrmodel(train_tfidf, test_tfidf, y_train, y_test, random_state=123,
     solver="newton-cg",
     multi_class="multinomial",
-    class_weight="balanced",
-).fit(X_train, y_train)
-
-train["predicted"] = lm.predict(X_train)
-test["predicted"] = lm.predict(X_test)
-# -
-
-print("Accuracy: {:.2%}".format(accuracy_score(train.actual, train.predicted)))
-print("---")
-print("Confusion Matrix")
-print(pd.crosstab(train.predicted, train.actual))
-print("---")
-print(classification_report(train.actual, train.predicted))
-
-print("Accuracy: {:.2%}".format(accuracy_score(test.actual, test.predicted)))
-print("---")
-print("Confusion Matrix")
-print(pd.crosstab(test.predicted, test.actual))
-print("---")
-print(classification_report(test.actual, test.predicted))
+    class_weight="balanced")
 
 # ### Decision Tree
 
@@ -757,67 +774,77 @@ clf = DecisionTreeClassifier(
     criterion="entropy", max_depth=5, random_state=123
 )
 
-clf.fit(X_train, y_train)
+clf.fit(train_tfidf, y_train)
 
-y_pred = clf.predict(X_train)
+y_pred = clf.predict(train_tfidf)
 y_pred[0:5]
 
-y_pred_proba = clf.predict_proba(X_train)
+y_pred_proba = clf.predict_proba(train_tfidf)
 # y_pred_proba
 
 # ### Computing the accuracy of our model
 
 print(
     "Accuracy of Decision Tree classifier on training set: {:.2f}".format(
-        clf.score(X_train, y_train)
+        clf.score(train_tfidf, y_train)
     )
 )
 
-print(confusion_matrix(y_train, y_pred))
+confmatrix(y_train, y_pred)
 
 print(classification_report(y_train, y_pred))
 
 print(
     "Accuracy of Decision Tree classifier on test set: {:.2f}".format(
-        clf.score(X_test, y_test)
+        clf.score(test_tfidf, y_test)
     )
 )
 
+
 # ### Random Forest
 
-from sklearn.ensemble import RandomForestClassifier
+def rfmodel(X_train, X_test, y_train, y_test, **kwargs):
+    clf = RandomForestClassifier(**kwargs).fit(X_train, y_train)
+    
+#     print("Feature Importances:")
+#     print(clf.feature_importances_)
+    print()
+    print("TRAIN")
+    print()
+    y_pred_train = clf.predict(X_train)
+    print(
+        "Accuracy of clf classifier on training set: {:.2f}".format(
+            accuracy_score(y_train, y_pred_train)
+        )
+    )
+    print()
+    print(confmatrix(y_train, y_pred_train))
+    print()
+    print(classification_report(y_train, y_pred_train))
+    
+    print("-" * 20)
+    print()
+    print("TEST")
+    print()
+    y_pred_test = clf.predict(X_test)
+    print(
+        "Accuracy of clf classifier on training set: {:.2f}".format(
+            accuracy_score(y_test, y_pred_test)
+        )
+    )
+    print()
+    print(confmatrix(y_test, y_pred_test))
+    print()
+    print(classification_report(y_test, y_pred_test))
 
-# +
-clf = RandomForestClassifier(
+
+rfmodel(train_tfidf, test_tfidf, y_train, y_test,
     n_estimators=100,
     min_samples_leaf=3,
     max_depth=20,
     random_state=123,
     class_weight="balanced",
 )
-clf.fit(X_train, y_train)
-
-print(clf.feature_importances_)
-# -
-
-train["predicted"] = clf.predict(X_train)
-test["predicted"] = clf.predict(X_test)
-
-print("Accuracy: {:.2%}".format(accuracy_score(train.actual, train.predicted)))
-print("---")
-print("Confusion Matrix")
-print(pd.crosstab(train.predicted, train.actual))
-print("---")
-print(classification_report(train.actual, train.predicted))
-
-print("Accuracy: {:.2%}".format(accuracy_score(test.actual, test.predicted)))
-print("---")
-print("Confusion Matrix")
-print(pd.crosstab(test.predicted, test.actual))
-print("---")
-print(classification_report(test.actual, test.predicted))
-
-# # TEST USING TFIDFVectorizer
 
 # ### For Top 500 Words by TF-IDF
 #
@@ -830,252 +857,95 @@ TOP_NWORDS = 500
 # ### Calculate TF-IDF for each word
 
 # +
-from sklearn.feature_extraction.text import TfidfVectorizer
-
 tfidf = TfidfVectorizer(strip_accents="unicode", max_features=TOP_NWORDS)
-tfidfs = tfidf.fit_transform(df.lemmatized)
-df_tfidf = pd.DataFrame(tfidfs.todense(), columns=tfidf.get_feature_names())
+train_tfidf = tfidf.fit_transform(X_train)
+df_tfidf = pd.DataFrame(train_tfidf.todense(), columns=tfidf.get_feature_names())
+
+test_tfidf = tfidf.transform(X_test)
 # -
 
-# ### Train-test split
+train_tfidf.shape
 
-# +
-y = df.lang_grouped
+test_tfidf.shape
 
-# X = tfidfs.todense()
-# df_tfidfs.head()
-X = df_tfidf
-X.shape
-
-# +
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, stratify=y, test_size=0.2, random_state=123
-)
-
-train = pd.DataFrame(dict(actual=y_train))
-test = pd.DataFrame(dict(actual=y_test))
-# -
-
-X_train.shape
-
-type(X_train)
-
-X_train.sum().sort_values(ascending=False)
+df_tfidf.sum().sort_values(ascending=False)
 
 # **What does the distribution look like?**
 
-sns.distplot(X_train.values.flatten())
+sns.distplot(train_tfidf.todense().flatten())
 
 # ### Naive Bayes Model
 
-gnb = GaussianNB()
-gnb.fit(X_train, y_train)
-y_train_pred = gnb.predict(X_train)
-print(
-    "Accuracy of GNB classifier on training set: {:.2f}".format(
-        gnb.score(X_train, y_train)
-    )
-)
-print(confusion_matrix(y_train, y_train_pred))
-print(classification_report(y_train, y_train_pred))
-
-y_test_pred = gnb.predict(X_test)
-print(
-    "Accuracy of GNB classifier on test set: {:.2f}".format(
-        gnb.score(X_test, y_test)
-    )
-)
-print(confusion_matrix(y_test, y_test_pred))
-print(classification_report(y_test, y_test_pred))
+nbmodel(train_tfidf.todense(), test_tfidf.todense(), y_train, y_test)
 
 # ### Logistic Regression
 
-# +
-lm = LogisticRegression(
+lrmodel(train_tfidf, test_tfidf, y_train, y_test,
     random_state=123,
     solver="newton-cg",
     multi_class="multinomial",
     class_weight="balanced",
-).fit(X_train, y_train)
-
-train["predicted"] = lm.predict(X_train)
-test["predicted"] = lm.predict(X_test)
-# -
-
-print("Accuracy: {:.2%}".format(accuracy_score(train.actual, train.predicted)))
-print("---")
-print("Confusion Matrix")
-print(pd.crosstab(train.predicted, train.actual))
-print("---")
-print(classification_report(train.actual, train.predicted))
-
-print("Accuracy: {:.2%}".format(accuracy_score(test.actual, test.predicted)))
-print("---")
-print("Confusion Matrix")
-print(pd.crosstab(test.predicted, test.actual))
-print("---")
-print(classification_report(test.actual, test.predicted))
+)
 
 # ### Random Forest
 
-from sklearn.ensemble import RandomForestClassifier
-
-# +
-clf = RandomForestClassifier(
+rfmodel(train_tfidf, test_tfidf, y_train, y_test,
     n_estimators=100, max_depth=20, random_state=123, class_weight="balanced"
 )
-clf.fit(X_train, y_train)
-
-print(clf.feature_importances_)
-# -
-
-train["predicted"] = clf.predict(X_train)
-test["predicted"] = clf.predict(X_test)
-
-print("Accuracy: {:.2%}".format(accuracy_score(train.actual, train.predicted)))
-print("---")
-print("Confusion Matrix")
-print(pd.crosstab(train.predicted, train.actual))
-print("---")
-print(classification_report(train.actual, train.predicted))
-
-print("Accuracy: {:.2%}".format(accuracy_score(test.actual, test.predicted)))
-print("---")
-print("Confusion Matrix")
-print(pd.crosstab(test.predicted, test.actual))
-print("---")
-print(classification_report(test.actual, test.predicted))
 
 # ### Using Bigrams as features
 
-# ### For Top 100 Bigrams by TF-IDF
+# ### For Top 500 Bigrams by TF-IDF
 #
 # Top 100 did not work well
 
-TOP_NBIGRAMS = 5000
+TOP_NBIGRAMS = 5_000
 # top_nwords = top_words.sort_values(by="all", ascending=False).head(500)
 # top_nwords.index.values
 
 # ### Calculate TF-IDF for each word
 
 # +
-from sklearn.feature_extraction.text import TfidfVectorizer
-
 tfidf = TfidfVectorizer(
     strip_accents="unicode", max_features=TOP_NBIGRAMS, ngram_range=(2, 2)
 )
-tfidfs = tfidf.fit_transform(df.lemmatized)
-df_tfidf = pd.DataFrame(tfidfs.todense(), columns=tfidf.get_feature_names())
+
+train_tfidf = tfidf.fit_transform(X_train)
+df_tfidf = pd.DataFrame(train_tfidf.todense(), columns=tfidf.get_feature_names())
+
+test_tfidf = tfidf.transform(X_test)
 # -
 
-# ### Train-test split
+train_tfidf.shape
 
-# +
-y = df.lang_grouped
+test_tfidf.shape
 
-# X = tfidfs.todense()
-# df_tfidfs.head()
-X = df_tfidf
-X.shape
-
-# +
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, stratify=y, test_size=0.2, random_state=123
-)
-
-train = pd.DataFrame(dict(actual=y_train))
-test = pd.DataFrame(dict(actual=y_test))
-# -
-
-X_train.shape
-
-type(X_train)
-
-X_train.sum().sort_values(ascending=False)
+df_tfidf.sum().sort_values(ascending=False)
 
 # **What does the distribution look like?**
 
-sns.distplot(X_train.values.flatten())
+sns.distplot(train_tfidf.todense().flatten())
 
 # ### Naive Bayes Model
 
-gnb = GaussianNB()
-gnb.fit(X_train, y_train)
-y_train_pred = gnb.predict(X_train)
-print(
-    "Accuracy of GNB classifier on training set: {:.2f}".format(
-        gnb.score(X_train, y_train)
-    )
-)
-print(confusion_matrix(y_train, y_train_pred))
-print(classification_report(y_train, y_train_pred))
-
-y_test_pred = gnb.predict(X_test)
-print(
-    "Accuracy of GNB classifier on test set: {:.2f}".format(
-        gnb.score(X_test, y_test)
-    )
-)
-print(confusion_matrix(y_test, y_test_pred))
-print(classification_report(y_test, y_test_pred))
+nbmodel(train_tfidf.todense(), test_tfidf.todense(), y_train, y_test)
 
 # ### Logistic Regression
 
-# +
-lm = LogisticRegression(
+lrmodel(train_tfidf, test_tfidf, y_train, y_test,
     random_state=123,
     solver="newton-cg",
     multi_class="multinomial",
     class_weight="balanced",
-).fit(X_train, y_train)
-
-train["predicted"] = lm.predict(X_train)
-test["predicted"] = lm.predict(X_test)
-# -
-
-print("Accuracy: {:.2%}".format(accuracy_score(train.actual, train.predicted)))
-print("---")
-print("Confusion Matrix")
-print(pd.crosstab(train.predicted, train.actual))
-print("---")
-print(classification_report(train.actual, train.predicted))
-
-print("Accuracy: {:.2%}".format(accuracy_score(test.actual, test.predicted)))
-print("---")
-print("Confusion Matrix")
-print(pd.crosstab(test.predicted, test.actual))
-print("---")
-print(classification_report(test.actual, test.predicted))
+)
 
 # ### Random Forest
 
-from sklearn.ensemble import RandomForestClassifier
-
-# +
-clf = RandomForestClassifier(
+rfmodel(train_tfidf, test_tfidf, y_train, y_test,
     n_estimators=100, max_depth=20, random_state=123, class_weight="balanced"
 )
-clf.fit(X_train, y_train)
-
-print(clf.feature_importances_)
-# -
-
-train["predicted"] = clf.predict(X_train)
-test["predicted"] = clf.predict(X_test)
-
-print("Accuracy: {:.2%}".format(accuracy_score(train.actual, train.predicted)))
-print("---")
-print("Confusion Matrix")
-print(pd.crosstab(train.predicted, train.actual))
-print("---")
-print(classification_report(train.actual, train.predicted))
-
-print("Accuracy: {:.2%}".format(accuracy_score(test.actual, test.predicted)))
-print("---")
-print("Confusion Matrix")
-print(pd.crosstab(test.predicted, test.actual))
-print("---")
-print(classification_report(test.actual, test.predicted))
 
 # ### Summarize Conclusions
+
+
 
