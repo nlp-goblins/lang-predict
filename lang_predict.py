@@ -622,6 +622,9 @@ test_tfidf = tfidf.transform(X_test)
 
 train_tfidf.shape
 
+with open("tfidf.obj", 'wb') as fp:
+    pickle.dump(tfidf, fp)
+
 # **Words with highest tf-idf**
 
 df_tfidf.max().sort_values(ascending=False).head(10)
@@ -704,8 +707,11 @@ def knnmodel(X_train, X_test, y_train, y_test, **kwargs):
     return knn
 
 
-knnmodel(train_tfidf, test_tfidf, y_train, y_test,
+knn = knnmodel(train_tfidf, test_tfidf, y_train, y_test,
     n_neighbors=6, weights="uniform")
+
+with open("knnmodel.obj", 'wb') as fp:
+    pickle.dump(knn, fp)
 
 
 # ### Naive Bayes Model
@@ -923,9 +929,6 @@ df_tfidf = pd.DataFrame(train_tfidf.todense(), columns=tfidf.get_feature_names()
 test_tfidf = tfidf.transform(X_test)
 # -
 
-with open("tfidf.obj", 'wb') as fp:
-    pickle.dump(tfidf, fp)
-
 train_tfidf.shape
 
 # **Words with highest tf-idf**
@@ -944,13 +947,6 @@ lm = lrmodel(train_tfidf, test_tfidf, y_train, y_test, random_state=123,
     solver="newton-cg",
     multi_class="multinomial",
     class_weight="balanced")
-
-# # Best Model
-#
-# #### Save It
-
-with open("lrmodel.obj", 'wb') as fp:
-    pickle.dump(lm, fp)
 
 rfmodel(train_tfidf, test_tfidf, y_train, y_test,
     n_estimators=1000,

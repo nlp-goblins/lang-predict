@@ -8,7 +8,6 @@
 *.log
 *.moc
 *.o
-*.obj
 *.orig
 *.rej
 *.so
