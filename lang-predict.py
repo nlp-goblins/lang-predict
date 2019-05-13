@@ -28,6 +28,7 @@
 #         - [ ] build a function to rank my model (see https://towardsdatascience.com/beyond-accuracy-precision-and-recall-3da06bea9f6c)
 #         - [ ] add function to make a prediction on a given README; make sure other requirements of the project are done as well
 #         - [X] throw out most frequent words and most frequent bigrams. I think they may be throwing the model off.
+#         - [ ] use as features only words unique to each language
 #     - Nicole
 #         - [ ] Bag of words modeling
 #         - [ ] Add sentiment feature
@@ -127,6 +128,9 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 
 from langdetect import detect
+
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
 # -
 
 # **Reload modules to capture changes**
@@ -577,12 +581,15 @@ for lang, words in words_by_lang.items():
     plt.title(lang)
     plt.imshow(img)
 
-
 # **Conclusion**
 #
 # Trigrams are not that helpful. They appear to be mostly junk or unique to a specific repo.
 
-# ### Statistical Tests
+# ### Sentiment Analysis
+
+df['sentiment'] = df.lemmatized.apply(afinn.score)
+df.groupby('lang').sentiment.mean()
+
 
 # ### Summarize Conclusions
 
@@ -630,8 +637,6 @@ type(X_train)
 # ### Calculate TF-IDF for each word
 
 # +
-from sklearn.feature_extraction.text import TfidfVectorizer
-
 tfidf = TfidfVectorizer()
 train_tfidf = tfidf.fit_transform(X_train)
 df_tfidf = pd.DataFrame(train_tfidf.todense(), columns=tfidf.get_feature_names())
@@ -1071,10 +1076,38 @@ rfmodel(train_tfidf, test_tfidf, y_train, y_test,
     n_estimators=100, max_depth=20, random_state=123, class_weight="balanced"
 )
 
+# ### Bag of Words
+
+# +
+vectorizer = CountVectorizer(max_features=750)
+train_bow = vectorizer.fit_transform(X_train)
+test_bow = vectorizer.transform(X_test)
+
+df_bow = pd.DataFrame(train_bow.todense(), columns=vectorizer.get_feature_names())
+# -
+
+train_bow.shape
+
+# **Most common wordsf**
+
+df_bow.sum().sort_values(ascending=False).head(10)
+
+# **Least common words**
+
+df_bow.sum().sort_values(ascending=False).tail(10)
+
+nbmodel(train_bow.todense(), test_bow.todense(), y_train, y_test)
+
+lrmodel(train_bow, test_bow, y_train, y_test, random_state=123,
+    solver="newton-cg",
+    multi_class="multinomial",
+    class_weight="balanced")
+
+rfmodel(train_bow, test_bow, y_train, y_test,
+    n_estimators=200, max_depth=10, random_state=123, class_weight="balanced"
+)
+
 # ### Summarize Conclusions
-
-
-
 
 
 
