@@ -13,7 +13,7 @@
 #     name: python3
 # ---
 
-# # Title
+# # README Prophesy
 # By Nicole Garza & Michael P. Moran
 
 # ## TODO
@@ -23,17 +23,16 @@
 #         - [X] Remove repos with no programming language
 #         - [X] Fit the vectorizer to the X_test, not the whole thing pre-split!!
 #         - [X] remove non-english repos
-#         - [ ] ensure only english words
 #         - [ ] look at run on words
-#         - [ ] build a function to rank my model (see https://towardsdatascience.com/beyond-accuracy-precision-and-recall-3da06bea9f6c)
 #         - [ ] add function to make a prediction on a given README; make sure other requirements of the project are done as well
 #         - [X] throw out most frequent words and most frequent bigrams. I think they may be throwing the model off.
 #         - [ ] use as features only words unique to each language
+#         - [ ] Also try rebalancing the dataset so Javascript and Java are not overrepresented
 #     - Nicole
-#         - [ ] Bag of words modeling
-#         - [ ] Add sentiment feature
+#         - [X] Bag of words modeling
+#         - [X] Add sentiment feature
 #         - [ ] add number of words of README as feature
-#         - [ ] try stemmed and clean
+#         - [X] try stemmed and clean
 
 #   ## Table of contents
 # 1. [Project Planning](#project-planning)
@@ -52,36 +51,42 @@
 #
 # * Jupyter notebook containing analysis
 # * One or two google slides suitable for a general audience that summarize findings. Include a well-labelled visualization in your slides.
+# * A function taking a README as input and outputting the language
+
+# ### Project Conclusions
+
+# * Acquisition
+#     * Acquiring the data was challenging. We had two main options: (1) scrape the HTML-rendered search results and (2) use the JSON API. We chose to use the JSON API because it allowed dictionary-based access to the information we needed. We did not have to identify the correct HTML tag or do anything else associated with scraping. The JSON API also allowed us to download many more repos faster than scraping the HTML.
+#     * We also had the choice of scraping the HTML rendered README or downloading the raw README file. Acquiring the raw README was significantly easier, so we chose thisGitHub's API only returns a raw README file, not the rendered HTML version (although it's available in a link).
+# * Preparation
+#     * We processed the raw README using a markdown module, which rendered it to HTML. We then used Beautiful Soup to extract the text. We removed single character words (which was pointless because the sklearn vectorizers do this already) and also removed links.
+#     * We also removed non-English repos given that we are ASCII standardizing. Thus, our model is for English repos only. We dropped repos with no programming language, so our model has this limitation.
+# * Exploration
+#     * The most common languages were JavaScript, Java, Python, C++, and HTML. JavaScript and Java are heavily overrepresented. If we had more time, we would have rebalanced the dataset, so they do not predominate.
+#     * The most common words look like generic programming terms ("use", "code", "file") and do not appear to be useful indicators of the language (except for JavaScript, which we hope would indicate JavaScript). Also, there is significant overlap of the most common bigrams for the languages. Thus, bigrams may not perform better than single words.
+#     * We have problems with runon words. If we had more time, this is something to address.
+# * Modeling
+#     * Our model predicts for only the top 5 most common repos. Thus, an input repo that is not predominately programmed in one of these languages will automatically be wrong. We tried to use an "other" category but this sorely hurt our models' performance. Accuracy plummeted about 20-30 percentage points on average. It may be because "other" had such diversity of language it was pulling in repos it shouldn't. We tried using bigrams, but these did not give us better predictive power, which was not expected. The bigrams appeared to be unique overall to the individual languages.
+#     * We also used lemmatized, stemmed, and clean version of the README. Clean appeared to perform on par with stemmed. Not really sure why at this time.
+#     * With more time, we would add the number of words in the README as a feature.
+#     * KNN and Random Forest give us our best results
 
 # ### Data Dictionary & Domain Knowledge
 
 # ### Hypotheses
 # * I expect to see JavaScript and Python as the two most common languages used based on current popularity
-# * Using symbols and characters unique to certain languages, we might be able to more accurately predict language used
+#     - Yes, among the top 100 most-forked repos, but it's Java and Javascript when we grab repos outside the top 100.
 # * The primary language may be mentioned in the README. But some repositories mention multiple languages, so this may interfere with this method.
 # * The number of words may be an indication of the language. Older repositories are probably written in certain languages and because of their age, may have more documentation.
-# * We may be able to classify some repositories based on the operators used in the README. We may want to create a mapping of operators to languages. Then we can limit the potential languages using this and look at which language has the highest probability
-# * The READMEs contain sample code to download the library or use the program. This may be an indicator of the language. We can create a list of potential commands and map them to language.
 # * The sentiment score of the README may be indicative of the language
+#     - No. The languages all have a sentiment score of 0, except for C++
 
 # ### Thoughts & Questions
 #
-# * The code in many repositories are written in multiple languages.
-# * Should we remove all words not in an English dictionary?
-# * Try random sampling of the repos. How many would we need for a reliable result?
+# * The code in many repositories are written in multiple languages. We will go with the most predominant language.
 # * Take out repos with No programming language
+# * After taking out the "Other" programming language category. The accuracy of the model shot way up! I believe this category acquired so much language that was used in the top5 repos the models were having difficulty choosing the class.
 #
-# * After taking out the "Other" programming language category. The accuracy of the model shot way up! I believe this category acquired so much language that was used in repos for the top 5 most popular the models were having difficulty with choosing which category.
-#
-# KNN and Random Forest have given us our best results. We encountered initial difficulty acquiring the data and cleaning it. GitHub's API only returns a raw README file, not the rendered HTML version (although it's available in a link). We downloaded a markdown rendering module to do the rendering into HTML and processed that with BS. We removed single words (although TFIDFVectorizer does this) and also URLs. We also removed non-English repos given that we are ASCII standardizing. Thus, our model is for English repos only. We dropped repos with no programming language, so our model has this limitation. An input repo must have a programming language. Our model predicts for only the top 5 most common repos. Thus, an input repo that is not predominately programmed in one of these languages will automatically be wrong. We tried to use an "other" category but this sorely hurt our models performance. Accuracy plummeted about 20-30 percentage points on average. It may be because other had such diversity of language it was pulling repos away from their proper classification by the model. We tried using bigrams, but these did not give us better predictive power, which was not expected. The bigrams appeared to be unique overall to the individual languages.
-#
-# We may need to oversample repos written in the least common languages in order to have a model that properly classifies them.
-#
-# We also used lemmatized, stemmed, and clean version of the README. Clean appeared to outperform the others. Not really sure why at this time. Perhaps because of tech jargon and its inability to be stemmed or lemmatized due to its newness.
-#
-# We had some problems with runon words.
-#
-# If we had more time, we would add the number of words in the readme as a feature and also a sentiment analysis to see if languages have a distinct README sentiment.
 
 # ### Prepare the Environment
 
@@ -133,11 +138,9 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfVectorizer
 # -
 
-# **Reload modules to capture changes**
-
 # ## Acquisition <a name="acquisition"></a>
 
-# **Grab data for 500 most forked repos on GitHub**
+# **Grab data for 1000 most forked repos on GitHub**
 
 # **Constants**
 
@@ -148,7 +151,7 @@ HEADERS = {"Authorization": f"token {env.oauth_token}"}
 REPO_FILE_NAME = "repos.json"
 
 
-# **Extract necessary information**
+# **Download the data or read from repos.json file**
 
 # +
 def github_api_req(page):
@@ -178,7 +181,6 @@ def load_repo_metadata(use_cache=True):
                 :-8
             ]  # remove last 8 characters to get working URL
 
-            # find name of README file and construct a link to the raw text of the readme
             rmurl = readme_url(contents_url)
 
             readme_text = None  # sometimes there is no valid URL to the readme
@@ -329,7 +331,7 @@ def prep_readme_data(all_repo_data):
 df = pd.DataFrame(prep_readme_data(some_repo_data))
 # -
 
-# common single letter words?
+# any single j's?
 
 df[df.clean.str.contains(" j ")]
 
@@ -343,7 +345,7 @@ df.head()
 
 df.describe(include="all")
 
-df.lang.value_counts()
+df.lang.value_counts(dropna=False)
 
 # ### Remove repos that have one or fewer words
 
@@ -378,7 +380,7 @@ len(df)
 # #### Most common languages
 
 langs = pd.concat(
-    [df.lang.value_counts(), df.lang.value_counts(normalize=True)], axis=1
+    [df.lang.value_counts(dropna=False), df.lang.value_counts(dropna=False, normalize=True)], axis=1
 )
 langs.columns = ["n", "percent"]
 langs
@@ -407,21 +409,14 @@ df.isnull().sum()
 
 # ### Extract words from readmes for top 5 languages and "Other"
 
-# +
-# words_by_lang = {}
-# for lang in top_five:
-#     words_by_lang[lang] = " ".join(df[df.lang == lang].lemmatized)
-# pprint(words_by_lang)
-# -
-
 top_six = df.lang_grouped.value_counts().index
 words_by_lang = {}
 for lang in top_six:
-    words_by_lang[lang] = " ".join(df[df.lang_grouped == lang].lemmatized)
+    words_by_lang[lang] = " ".join(df[df.lang_grouped == lang].stemmed)
 
 # **Series of all words and their frequencies**
 
-words_by_freq = " ".join(df.lemmatized)
+words_by_freq = " ".join(df.stemmed)
 words_by_freq = pd.Series(words_by_freq.split()).value_counts()
 print("Top 5 most common words")
 words_by_freq.head()
@@ -489,6 +484,8 @@ plt.title("Probability of Language of Top 15 Most Common Words")
 plt.show()
 # -
 
+# Unsurprisingly, the most common words are representatively spread out among the categories
+
 # #### Word Cloud
 
 for lang, words in words_by_lang.items():
@@ -499,6 +496,10 @@ for lang, words in words_by_lang.items():
     plt.title(lang)
     plt.axis("off")
     plt.imshow(cloud)
+
+# **Conclusions**
+#
+# "project", "use' are common words among the languages, but other than these, the most cmmon words among the languages are different.
 
 # ### Bigrams
 
@@ -542,6 +543,10 @@ for lang, words in words_by_lang.items():
     plt.title(lang)
     plt.imshow(img)
 
+# **Conclusions**
+#
+# There is overlap among the languages as to the most common bigrams. The brigrams may not be that helpful after all.
+
 # ### Trigram
 
 for lang, words in words_by_lang.items():
@@ -581,15 +586,11 @@ for lang, words in words_by_lang.items():
     plt.title(lang)
     plt.imshow(img)
 
+
 # **Conclusion**
 #
-# Trigrams are not that helpful. They appear to be mostly junk or unique to a specific repo.
-
-# ### Sentiment Analysis
-
-df['sentiment'] = df.lemmatized.apply(afinn.score)
-df.groupby('lang').sentiment.mean()
-
+#
+# While there is less overlap of the most common trigrams than bigrams, these appear to be mostly junk or unique to a specific repo. 
 
 # ### Summarize Conclusions
 
@@ -927,10 +928,6 @@ rfmodel(train_tfidf, test_tfidf, y_train, y_test,
     class_weight="balanced",
 )
 
-# **Conclusion**
-#
-# Logistic regression and random forest improved slightly. Maybe there's something too excluding frequent words.**
-
 # ### Excluding least frequent words
 
 # ### Calculate TF-IDF for each word
@@ -971,10 +968,6 @@ rfmodel(train_tfidf, test_tfidf, y_train, y_test,
     random_state=123,
     class_weight="balanced",
 )
-
-# **Conclusions**
-#
-# Logistic regression is worse from when excluding the most frequent words. However, random forest improved over both the model with all words and the model excluding the most frequent words.
 
 # ### Excluding most and least frequent words
 
@@ -1018,7 +1011,7 @@ rfmodel(train_tfidf, test_tfidf, y_train, y_test,
 
 # **Conclusions**
 #
-# LR is not as good here as the model excluding the most common words. RF does not have the best numbers.
+# Excluding the least common words gives me the best results on the test dataset. However, all the models that exclude the least or most frequent words do not perform as well as not excluding them. Thus, I don't think it's a good idea to exclude the most or least frequent words. 
 
 # ### Using Bigrams as features
 
@@ -1107,7 +1100,6 @@ rfmodel(train_bow, test_bow, y_train, y_test,
     n_estimators=200, max_depth=10, random_state=123, class_weight="balanced"
 )
 
-# ### Summarize Conclusions
-
-
-
+# **Conclusions**
+#
+# For the most part, bag of words performs worse than TF-IDF, except for the random forest model.
